@@ -1,0 +1,211 @@
+{
+  "name": "FastAPI Python Backend Coding Standards",
+  "description": "Comprehensive coding standards for FastAPI RESTful API backend to ensure consistent, robust, and scalable, maintainable, and secure code that follows industry best practices",
+  "rules": [
+    {
+      "category": "Python",
+      "rules": [
+        "Use Python 3.13 or higher as specified in pyproject.toml",
+        "Follow PEP 8 style guide for Python code formatting",
+        "Use type hints for all function parameters, return types, and variables",
+        "Use async/await patterns for all database operations and I/O bound tasks",
+        "Use f-strings for string formatting instead of .format() or % formatting",
+        "Use pathlib for file system operations instead of os.path",
+        "Follow import ordering: standard library, third-party, local imports"
+      ]
+    },
+    {
+      "category": "FastAPI Application Structure",
+      "rules": [
+        "Use the layered architecture pattern: API endpoints -> Services -> Models",
+        "Keep FastAPI app initialization in app/main.py with proper middleware setup",
+        "Use APIRouter for organizing endpoints into logical modules",
+        "Include proper OpenAPI documentation with title, description, and version",
+        "Implement health check endpoints (/health) for monitoring",
+        "Use dependency injection with FastAPI Depends() for database sessions and auth",
+        "Configure CORS middleware properly for frontend integration"
+      ]
+    },
+    {
+      "category": "Database & ORM",
+      "rules": [
+        "Use SQLModel for database models combining SQLAlchemy and Pydantic",
+        "Inherit from BaseModel class for common fields (id, created_at, updated_at)",
+        "Use async database sessions with AsyncSession for all database operations",
+        "Use select() statements for database queries instead of deprecated query methods",
+        "Always use database transactions with proper error handling and rollback",
+        "Use Alembic for database migrations with proper versioning",
+        "Implement proper database connection pooling and session management"
+      ]
+    },
+    {
+      "category": "Models & Schemas",
+      "rules": [
+        "Separate database models (SQLModel with table=True) from API schemas",
+        "Use Pydantic models for request/response validation and serialization",
+        "Implement proper field validation with Pydantic validators",
+        "Use Optional[] for nullable fields and provide sensible defaults",
+        "Include proper __repr__ methods for database models",
+        "Use consistent naming: ModelName for DB models, ModelNameCreate/Update/Response for schemas",
+        "Add proper docstrings for all models explaining their purpose"
+      ]
+    },
+    {
+      "category": "API Endpoints",
+      "rules": [
+        "Use proper HTTP status codes for different response scenarios",
+        "Include comprehensive docstrings with parameter and return value descriptions",
+        "Use response_model for type safety and automatic OpenAPI documentation",
+        "Handle errors with appropriate HTTPException and status codes",
+        "Implement proper request validation with Pydantic schemas",
+        "Use path parameters, query parameters, and request bodies appropriately",
+        "Group related endpoints using APIRouter with consistent URL patterns"
+      ]
+    },
+    {
+      "category": "Authentication & Security",
+      "rules": [
+        "Use JWT tokens for authentication with proper expiration times",
+        "Implement password hashing with bcrypt through passlib",
+        "Use proper token validation and refresh token mechanisms",
+        "Implement session management with proper cleanup and expiration",
+        "Add rate limiting and brute force protection for authentication endpoints",
+        "Use dependency injection for authentication checks (get_current_active_user)",
+        "Implement proper CORS configuration for frontend integration",
+        "Hash passwords before storing and never log sensitive information"
+      ]
+    },
+    {
+      "category": "Business Logic & Services",
+      "rules": [
+        "Separate business logic into service layer functions",
+        "Use async functions for all service operations involving I/O",
+        "Implement proper error handling with try/catch blocks",
+        "Use type hints for all service function parameters and return values",
+        "Keep services focused on single responsibility principle",
+        "Implement proper logging for service operations",
+        "Use dependency injection to pass database sessions to services"
+      ]
+    },
+    {
+      "category": "Error Handling",
+      "rules": [
+        "Use FastAPI HTTPException for API errors with proper status codes",
+        "Implement global exception handlers for common error types",
+        "Always rollback database transactions on errors",
+        "Log errors with appropriate log levels (ERROR, WARNING, INFO)",
+        "Return consistent error response format with detail messages",
+        "Handle validation errors from Pydantic models appropriately",
+        "Implement proper timeout handling for external API calls"
+      ]
+    },
+    {
+      "category": "Logging & Monitoring",
+      "rules": [
+        "Use Python's logging module with proper log levels",
+        "Implement audit logging for security-sensitive operations",
+        "Log authentication attempts, user actions, and system events",
+        "Include relevant context in log messages (user_id, IP address, etc.)",
+        "Use structured logging format for better parsing and analysis",
+        "Implement proper log rotation and retention policies",
+        "Add monitoring endpoints for application health and metrics"
+      ]
+    },
+    {
+      "category": "Configuration",
+      "rules": [
+        "Use Pydantic Settings for environment-based configuration",
+        "Store sensitive information in environment variables, not in code",
+        "Use @lru_cache decorator for configuration instances to avoid reloading",
+        "Provide sensible defaults for all configuration values",
+        "Use different configurations for development, testing, and production",
+        "Validate configuration values with proper type checking",
+        "Document all environment variables and their purposes"
+      ]
+    },
+    {
+      "category": "Testing",
+      "rules": [
+        "Write comprehensive unit tests for all service functions",
+        "Use pytest with async test support (pytest-asyncio)",
+        "Mock external dependencies and database operations in unit tests",
+        "Implement integration tests for API endpoints",
+        "Use test database separate from development database",
+        "Test both success and failure scenarios",
+        "Achieve high test coverage (>80%) for critical business logic"
+      ]
+    },
+    {
+      "category": "Dependencies & Packaging",
+      "rules": [
+        "Use pyproject.toml for project configuration and dependencies",
+        "Pin dependency versions for production stability",
+        "Group dependencies by purpose (main, dev, test)",
+        "Use virtual environments for dependency isolation",
+        "Keep dependencies updated but test thoroughly before upgrading",
+        "Document any specific version requirements and reasons",
+        "Use uv or pip-tools for dependency management"
+      ]
+    },
+    {
+      "category": "Code Quality",
+      "rules": [
+        "Use meaningful function and variable names that describe their purpose",
+        "Keep functions small and focused on single responsibility",
+        "Avoid deep nesting by using early returns and guard clauses",
+        "Use constants for magic numbers and strings",
+        "Add comprehensive docstrings following Google or NumPy style",
+        "Use type hints consistently throughout the codebase",
+        "Implement proper code formatting with black or similar formatter"
+      ]
+    },
+    {
+      "category": "Performance",
+      "rules": [
+        "Use database connection pooling for efficient resource usage",
+        "Implement proper database indexing for frequently queried fields",
+        "Use pagination for large dataset responses",
+        "Implement caching with Redis for frequently accessed data",
+        "Use async operations for I/O bound tasks to improve concurrency",
+        "Optimize database queries by selecting only needed fields",
+        "Implement proper response compression for large responses"
+      ]
+    },
+    {
+      "category": "Security Best Practices",
+      "rules": [
+        "Validate all user inputs with Pydantic schemas",
+        "Implement proper SQL injection prevention with parameterized queries",
+        "Use HTTPS in production with proper SSL/TLS configuration",
+        "Implement proper session management with secure session storage",
+        "Add request rate limiting to prevent abuse",
+        "Use security headers (CORS, CSP, etc.) appropriately",
+        "Regular security audits and dependency vulnerability scanning"
+      ]
+    },
+    {
+      "category": "API Design",
+      "rules": [
+        "Follow RESTful API design principles",
+        "Use consistent URL patterns and HTTP methods",
+        "Implement proper API versioning (e.g., /api/v1/)",
+        "Use appropriate HTTP status codes for different scenarios",
+        "Implement comprehensive API documentation with examples",
+        "Use consistent response formats across all endpoints",
+        "Implement proper content negotiation and Accept headers"
+      ]
+    },
+    {
+      "category": "Deployment & DevOps",
+      "rules": [
+        "Use environment-specific configuration files",
+        "Implement proper logging configuration for production",
+        "Use process managers like gunicorn or uvicorn for production deployment",
+        "Implement proper health checks for load balancers",
+        "Use database migrations for schema changes",
+        "Implement proper backup and recovery procedures",
+        "Monitor application performance and error rates"
+      ]
+    }
+  ]
+}
