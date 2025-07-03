@@ -53,6 +53,10 @@ class AuditEventType(str, Enum):
     BACKUP_CREATED = "backup_created"
     BACKUP_RESTORED = "backup_restored"
 
+    # Email verification events
+    EMAIL_VERIFICATION_CREATED = "email_verification_created"
+    EMAIL_VERIFICATION_COMPLETED = "email_verification_completed"
+
 
 class AuditLog(BaseModel, table=True):
     """

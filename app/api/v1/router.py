@@ -8,14 +8,15 @@ endpoint routers for version 1 of the API.
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import auth
-
-# from app.api.v1.endpoints import users
+from app.api.v1.endpoints import users
+from app.api.v1.endpoints import health
 
 api_router = APIRouter()
 
 # Include endpoint routers
 api_router.include_router(auth.router, prefix="/auth", tags=["authentication"])
-# api_router.include_router(users.router, prefix="/users", tags=["users"])
+api_router.include_router(users.router, prefix="/users", tags=["users"])
+api_router.include_router(health.router, prefix="", tags=["health", "monitoring"])
 
 
 # Placeholder endpoints for now

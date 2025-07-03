@@ -8,14 +8,17 @@ user registration, login, logout, token refresh, and profile management.
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime
 
 from app.dependencies import (
     get_db,
     get_current_active_user,
     get_client_ip,
     get_user_agent,
+    require_role,
+    require_verified_user,
 )
-from app.models.user import User, UserCreate
+from app.models.user import User, UserCreate, UserRole
 from app.models.session import SessionCreate
 from app.models.audit import AuditLog, AuditEventType
 from app.schemas.auth import (
@@ -29,12 +32,17 @@ from app.schemas.auth import (
     ErrorResponse,
     UserSessionsResponse,
     SessionInfo,
+    PasswordResetRequest,
+    PasswordResetComplete,
+    EmailVerificationRequest,
+    ResendVerificationRequest,
 )
 from app.services.user_service import (
     create_user,
     authenticate_user,
     check_user_exists,
     get_user_by_id,
+    get_user_by_email,
 )
 from app.services.session_service import (
     create_user_session,
@@ -43,6 +51,19 @@ from app.services.session_service import (
     revoke_all_user_sessions,
     get_user_sessions,
 )
+from app.services.password_reset_service import (
+    create_password_reset_token,
+    consume_password_reset_token,
+    send_password_reset_email,
+)
+from app.core.security import get_password_hash
+from app.services.email_verification_service import (
+    create_verification_token,
+    consume_verification_token,
+    send_verification_email,
+)
+from app.config import get_settings
+from app.utils.url_utils import build_frontend_url
 
 router = APIRouter()
 
@@ -121,6 +142,18 @@ async def register(
     try:
         user = await create_user(db, user_create)
 
+        # Generate email verification token and send email (fire and forget)
+        try:
+            token = await create_verification_token(db, user.id, user.username)
+            import asyncio
+
+            asyncio.create_task(
+                send_verification_email(db, user.email, user.username, token)
+            )
+        except Exception as e:
+            # Log email sending failure but do not block registration
+            print(f"Failed to send verification email: {e}")
+
         # Create audit log for successful registration
         audit_log = AuditLog.create_log(
             event_type=AuditEventType.USER_CREATED,
@@ -135,7 +168,7 @@ async def register(
         await db.commit()
 
         return AuthResponse(
-            message="User registered successfully",
+            message="User registered successfully. Please check your email to verify your account.",
             success=True,
             data={
                 "user_id": user.id,
@@ -352,7 +385,7 @@ async def logout(
     description="Get authenticated user's profile information",
 )
 async def get_current_user_profile(
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_verified_user),
 ) -> Any:
     """
     Get current user profile.
@@ -388,19 +421,18 @@ async def get_current_user_profile(
     description="Get all active sessions for the authenticated user",
 )
 async def get_user_sessions_endpoint(
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role(UserRole.USER, UserRole.ADMIN)),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """
     Get user sessions.
 
     Returns all active sessions for the authenticated user.
+    Only accessible to users with role USER or ADMIN.
     """
     if current_user.id is None:
         raise HTTPException(status_code=400, detail="User ID is required")
-    
     user_sessions = await get_user_sessions(db, current_user.id, active_only=True)
-
     sessions_info = []
     for session in user_sessions:
         session_info = SessionInfo(
@@ -414,7 +446,6 @@ async def get_user_sessions_endpoint(
             is_current=False,  # We'd need token info to determine current session
         )
         sessions_info.append(session_info)
-
     return UserSessionsResponse(
         sessions=sessions_info,
         total_sessions=len(sessions_info),
@@ -433,7 +464,7 @@ async def get_user_sessions_endpoint(
 async def revoke_session_endpoint(
     session_id: int,
     request: Request,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role(UserRole.USER, UserRole.ADMIN)),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """
@@ -442,11 +473,11 @@ async def revoke_session_endpoint(
     - **session_id**: ID of the session to revoke
 
     Revokes the specified session for the authenticated user.
+    Only accessible to users with role USER or ADMIN.
     """
     # Get client information
     ip_address = get_client_ip(request)
     user_agent = get_user_agent(request)
-
     success = await revoke_session(
         db=db,
         session_id=session_id,
@@ -455,15 +486,235 @@ async def revoke_session_endpoint(
         ip_address=ip_address,
         user_agent=user_agent,
     )
-
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Session not found or already revoked",
         )
-
     return AuthResponse(
         message="Session revoked successfully",
         success=True,
         data={"session_id": session_id},
+    )
+
+
+@router.post(
+    "/forgot-password",
+    response_model=AuthResponse,
+    summary="Request password reset",
+    description="Send password reset email to user",
+)
+async def forgot_password(
+    reset_request: PasswordResetRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """
+    Request password reset.
+
+    - **email**: Email address to send reset link to
+
+    Sends a password reset email if the user exists.
+    """
+    # Get client information
+    ip_address = get_client_ip(request)
+    user_agent = get_user_agent(request)
+
+    # Find user by email
+    user = await get_user_by_email(db, reset_request.email)
+
+    if user:
+        user_id = user.id
+        username = user.username
+        email = user.email
+        # Create password reset token
+        if user_id is not None:
+            token = await create_password_reset_token(db, user_id, username)
+            # Build reset URL (frontend should handle this)
+            reset_url = build_frontend_url(f"reset-password?token={token}")
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user ID"
+            )
+
+        # Send email (fire and forget)
+        try:
+            import asyncio
+
+            asyncio.create_task(
+                send_password_reset_email(db, email, username, reset_url)
+            )
+        except Exception as e:
+            print(f"Failed to send password reset email: {e}")
+
+        # Create audit log for password reset request
+        audit_log = AuditLog.create_log(
+            event_type=AuditEventType.PASSWORD_RESET_REQUESTED,
+            event_description=f"Password reset requested for user: {username}",
+            user_id=user_id,
+            username=username,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            success=True,
+        )
+        db.add(audit_log)
+        await db.commit()
+
+    return AuthResponse(
+        message="If the email exists, a password reset link has been sent.",
+        success=True,
+    )
+
+
+@router.post(
+    "/reset-password",
+    response_model=AuthResponse,
+    summary="Complete password reset",
+    description="Reset password using token",
+)
+async def reset_password(
+    reset_data: PasswordResetComplete,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """
+    Complete password reset.
+
+    - **token**: Password reset token
+    - **new_password**: New password
+
+    Resets the user's password using the provided token.
+    """
+    # Get client information
+    ip_address = get_client_ip(request)
+    user_agent = get_user_agent(request)
+
+    # Consume the token and get the user info
+    user_info = await consume_password_reset_token(db, reset_data.token)
+
+    if not user_info:
+        # Create audit log for invalid token
+        audit_log = AuditLog.create_log(
+            event_type=AuditEventType.PASSWORD_RESET_COMPLETED,
+            event_description="Password reset attempt with invalid token",
+            ip_address=ip_address,
+            user_agent=user_agent,
+            success=False,
+            error_message="Invalid or expired token",
+        )
+        db.add(audit_log)
+        await db.commit()
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token",
+        )
+
+    user_id, username = user_info
+
+    # Get the user object for password update
+    user = await get_user_by_id(db, user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User not found",
+        )
+
+    # Update user's password
+    user.hashed_password = get_password_hash(reset_data.new_password)
+    user.updated_at = datetime.utcnow()
+
+    # Revoke all existing sessions for security
+    await revoke_all_user_sessions(
+        db, user_id, reason="Password reset - security logout"
+    )
+
+    # Create audit log for successful password reset
+    audit_log = AuditLog.create_log(
+        event_type=AuditEventType.PASSWORD_RESET_COMPLETED,
+        event_description=f"Password reset completed for user: {username}",
+        user_id=user_id,
+        username=username,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        success=True,
+    )
+    db.add(audit_log)
+
+    await db.commit()
+
+    return AuthResponse(
+        message="Password reset successfully. Please login with your new password.",
+        success=True,
+    )
+
+
+@router.post(
+    "/verify-email",
+    response_model=AuthResponse,
+    summary="Verify email",
+    description="Verify a user's email address using a token sent via email",
+)
+async def verify_email(
+    request_data: EmailVerificationRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """Verify a user's email using the token provided."""
+    ip_address = get_client_ip(request)
+    user_agent = get_user_agent(request)
+
+    result = await consume_verification_token(db, request_data.token)
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token"
+        )
+
+    user_id, username = result
+    # Mark the user as verified
+    user = await get_user_by_id(db, user_id)
+    if user:
+        user.is_verified = True
+        user.email_verified_at = datetime.utcnow()
+        await db.commit()
+
+    return AuthResponse(
+        message="Email verified successfully. You can now log in.",
+        success=True,
+    )
+
+
+@router.post(
+    "/resend-verification",
+    response_model=AuthResponse,
+    summary="Resend verification email",
+    description="Send a new verification email to an unverified user",
+)
+async def resend_verification_email(
+    request_data: ResendVerificationRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """Resend verification email if the user is not verified yet."""
+    ip_address = get_client_ip(request)
+    user_agent = get_user_agent(request)
+
+    user = await get_user_by_email(db, request_data.email)
+    if not user or user.is_verified:
+        # Do not reveal whether email exists for security reasons
+        return AuthResponse(
+            message="If the email exists and is not verified, a verification link has been sent.",
+            success=True,
+        )
+
+    # Generate new token and send email
+    token = await create_verification_token(db, user.id, user.username)
+    try:
+        await send_verification_email(db, user.email, user.username, token)
+    except Exception as e:
+        print(f"Failed to resend verification email: {e}")
+
+    return AuthResponse(
+        message="If the email exists and is not verified, a verification link has been sent.",
+        success=True,
     )

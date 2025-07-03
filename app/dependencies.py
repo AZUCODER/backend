@@ -2,10 +2,11 @@
 Common FastAPI dependencies.
 
 This module contains common dependencies used across the FastAPI application
-such as database sessions, authentication, and common utilities.
+such as database sessions, authentication, and common utilities with enhanced
+database monitoring and connection management.
 """
 
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Dict, Any
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -13,20 +14,113 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_access_token
 from app.database import get_session
+from app.database.monitoring import (
+    get_query_metrics,
+    get_performance_summary,
+    health_check_queries,
+)
+from app.models.user import UserRole
+from app.services.enhanced_user_service import EnhancedUserService
 
 # Security dependency
 security = HTTPBearer()
 
 
+# Enhanced database dependency with monitoring
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
-    Database session dependency.
+    Enhanced database session dependency with monitoring and retry logic.
+
+    Yields:
+        AsyncSession: Database session with enhanced features
+    """
+    async for session in get_session():
+        yield session
+
+
+# Legacy database dependency for backward compatibility
+async def get_db_legacy() -> AsyncGenerator[AsyncSession, None]:
+    """
+    Legacy database session dependency for backward compatibility.
 
     Yields:
         AsyncSession: Database session
     """
-    async for session in get_session():
+    from app.database import get_session_legacy
+
+    async for session in get_session_legacy():
         yield session
+
+
+# Enhanced user service dependency
+async def get_enhanced_user_service(
+    db: AsyncSession = Depends(get_db),
+) -> EnhancedUserService:
+    """
+    Enhanced user service dependency with monitoring and transaction support.
+
+    Args:
+        db: Database session
+
+    Returns:
+        EnhancedUserService: Enhanced user service instance
+    """
+    return EnhancedUserService(db)
+
+
+# Database health check dependencies
+async def get_db_health() -> Dict[str, Any]:
+    """
+    Database health check dependency.
+
+    Returns:
+        Dict: Database health status
+    """
+    from app.database.connection import db_manager
+
+    return await db_manager.health_check()
+
+
+async def get_db_pool_status() -> Dict[str, Any]:
+    """
+    Database pool status dependency.
+
+    Returns:
+        Dict: Database connection pool status
+    """
+    from app.database.connection import db_manager
+
+    return await db_manager.get_pool_status()
+
+
+async def get_query_performance_metrics() -> Dict[str, Any]:
+    """
+    Query performance metrics dependency.
+
+    Returns:
+        Dict: Query performance metrics
+    """
+    return get_query_metrics()
+
+
+async def get_db_performance_summary() -> Dict[str, Any]:
+    """
+    Database performance summary dependency.
+
+    Returns:
+        Dict: Performance summary
+    """
+    return get_performance_summary()
+
+
+async def get_db_health_check() -> Dict[str, Any]:
+    """
+    Comprehensive database health check dependency.
+
+    Returns:
+        Dict: Comprehensive health check results
+    """
+    return await health_check_queries()
 
 
 async def get_current_user_id(
@@ -126,3 +220,35 @@ def get_user_agent(request) -> str:
         str: User agent string
     """
     return request.headers.get("User-Agent", "unknown")
+
+
+def require_role(*roles: UserRole):
+    """
+    Dependency to require a user to have one of the specified roles.
+    Usage: Depends(require_role(UserRole.ADMIN, UserRole.USER))
+    Raises 403 if the user does not have the required role.
+    """
+
+    async def _require_role(current_user=Depends(get_current_active_user)):
+        if current_user.role not in roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Insufficient permissions. Required role(s): {', '.join([r.value for r in roles])}",
+            )
+        return current_user
+
+    return _require_role
+
+
+def require_verified_user(current_user=Depends(get_current_active_user)):
+    """
+    Dependency to require a user to have a verified email.
+    Usage: Depends(require_verified_user)
+    Raises 403 if the user is not verified.
+    """
+    if not current_user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email not verified. Please verify your email to access this resource.",
+        )
+    return current_user

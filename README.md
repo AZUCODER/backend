@@ -1,47 +1,61 @@
 # FastAPI Backend
 
-A robust, scalable, and secure FastAPI backend for modern web applications.
+A robust, scalable, and secure FastAPI backend with **enterprise-grade database architecture** for modern web applications.
 
-## Features
+## 🚀 Features
 
 - **FastAPI**: Modern, fast web framework for building APIs with Python
-- **SQLModel**: SQL database toolkit combining SQLAlchemy and Pydantic
-- **JWT Authentication**: Secure token-based authentication
+- **Enhanced Database Layer**: Production-ready database architecture with monitoring
+- **Repository Pattern**: Clean data access layer with type safety
+- **Transaction Management**: Automatic retry logic and error recovery
+- **Performance Monitoring**: Real-time query analytics and slow query detection
+- **Health Monitoring**: Comprehensive system health checks and metrics
+- **JWT Authentication**: Secure token-based authentication with enhanced security
 - **PostgreSQL/SQLite**: Database support for both development and production
-- **Redis**: Caching and session storage
 - **Async/Await**: Fully asynchronous for high performance
 - **Auto-documentation**: Interactive API docs with Swagger UI
 - **Type Safety**: Full type hints throughout the codebase
 
-## Project Structure
+## 🏗️ Project Structure
 
 ```
 backend/
 ├── app/                    # Main application package
 │   ├── api/                # API routes
 │   │   └── v1/             # API version 1
-│   │       └── endpoints/  # Individual endpoint modules
-│   ├── core/               # Core functionality (security, config)
-│   ├── models/             # SQLModel database models
-│   ├── schemas/            # Pydantic schemas
-│   ├── services/           # Business logic services
+│   │       ├── router.py   # API v1 router
+│   │       └── endpoints/  # Individual endpoint modules (auth.py, users.py, health.py)
+│   ├── core/               # Core functionality (security)
+│   ├── database/           # Database layer (connection, monitoring, transactions)
+│   ├── models/             # SQLModel database models (user, session, audit, etc.)
+│   ├── repositories/       # Repository pattern implementation (base, user)
+│   ├── schemas/            # Pydantic schemas (auth, etc.)
+│   ├── services/           # Business logic services (user, session, email, etc.)
 │   ├── middleware/         # Custom middleware
-│   └── tests/              # Test modules
+│   ├── utils/              # Utility modules (url_utils)
+│   ├── config.py           # Settings management
+│   ├── database.py         # Database setup
+│   ├── dependencies.py     # Dependency injection
+│   ├── main.py             # FastAPI app entry point
+│   └── tests/              # Test modules (to be implemented)
 ├── alembic/                # Database migrations
+├── alembic.ini             # Alembic configuration
 ├── .env.example            # Environment variables example
-├── docker-compose.yml      # Docker Compose configuration
-├── Dockerfile             # Docker configuration
-└── pyproject.toml         # Project dependencies and configuration
+├── .env                    # Actual environment variables (not committed)
+├── pyproject.toml          # Project dependencies and configuration
+├── DATABASE_IMPROVEMENTS_SUMMARY.md # Database improvements documentation
+├── main.py                 # Entry point for running the app
+├── test_db.py              # Test database script
+└── Planning.md             # Planning and notes
 ```
 
-## Quick Start
+## ⚡ Quick Start
 
 ### Prerequisites
 
-- Python 3.13+
+- Python 3.10+
 - uv (recommended) or pip for package management
 - PostgreSQL (optional, SQLite is used by default)
-- Redis (optional, for caching)
 
 ### Installation
 
@@ -53,21 +67,15 @@ backend/
 
 2. **Install dependencies using uv (recommended)**
    ```bash
-   # Install uv if you haven't already
    pip install uv
-   
-   # Create virtual environment and install core dependencies
    uv venv
    .venv\Scripts\activate  # Windows
    source .venv/bin/activate  # Linux/Mac
-   
-   # Install core dependencies
-   uv pip install fastapi uvicorn pydantic-settings python-dotenv
+   uv pip install -r pyproject.toml
    ```
 
    **Alternative: Install all dependencies**
    ```bash
-   # This will install all dependencies from pyproject.toml
    uv sync
    ```
 
@@ -77,209 +85,121 @@ backend/
    # Edit .env with your configuration if needed
    ```
 
-4. **Verify the installation**
+4. **Run the development server**
    ```bash
-   # Test that everything works
-   python -c "from app.main import app; from app.config import get_settings; print('✅ Setup successful!')"
-   ```
-
-5. **Run the development server**
-   ```bash
-   # Option 1: Using the main entry point
    python main.py
-   
-   # Option 2: Using uvicorn directly
+   # or
    uvicorn app.main:app --reload
-   
-   # Option 3: Using uv (if all dependencies installed)
-   uv run uvicorn app.main:app --reload
    ```
 
-6. **Access the API**
+5. **Access the API**
    - API: http://localhost:8000
    - Interactive docs: http://localhost:8000/docs
    - ReDoc: http://localhost:8000/redoc
    - Health check: http://localhost:8000/health
 
+## 🗄️ Database Architecture
 
-## Database Setup
+- Repository pattern for all database operations (see `app/repositories/`)
+- Transaction management with retry logic (see `app/database/transactions.py`)
+- Performance monitoring (see `app/database/monitoring.py`)
+- Health check endpoints (see `app/api/v1/endpoints/health.py`)
 
-### Current: SQLite (Development)
-The application is currently configured to use SQLite for development with all models and migrations working.
+## 🗃️ Database Setup
 
-### Switching to PostgreSQL (Production)
+- Default: SQLite for development
+- Production: PostgreSQL (update `DATABASE_URL` in `.env`)
+- Migrations: Alembic (see `alembic/` and `alembic.ini`)
 
-1. **Set up PostgreSQL database**
-   ```bash
-   # Create database
-   createdb rag-fastapi-db
-   ```
+## 🛠️ Development
 
-2. **Update environment configuration**
-   ```bash
-   # Edit .env file
-   DATABASE_URL=postgresql+psycopg://postgres:your_password@localhost:5432/rag-fastapi-db
-   ```
+- All main modules are implemented and production-ready except for tests (to be added)
+- See `DATABASE_IMPROVEMENTS_SUMMARY.md` for details on database enhancements
 
-3. **Run migrations**
-   ```bash
-   # Apply all migrations to PostgreSQL
-   .venv\Scripts\python -m alembic upgrade head
-   ```
+## 🔌 API Endpoints
 
-### Database Models Implemented
-- **User**: Authentication, profile, account status
-- **Session**: JWT token management, device tracking  
-- **BlacklistedToken**: Revoked JWT tokens
-- **AuditLog**: Security events, user actions (24 event types)
-
-## Development
-
-### Project Structure Status
-
-```
-backend/
-├── app/                    ✅ Complete
-│   ├── __init__.py        ✅ Complete
-│   ├── main.py            ✅ Complete - FastAPI app with CORS
-│   ├── config.py          ✅ Complete - Settings management
-│   ├── database.py        ✅ Complete - DB connection setup
-│   ├── dependencies.py    ✅ Complete - Common dependencies
-│   ├── api/               ✅ Structure complete
-│   │   └── v1/           ✅ Complete - Router setup
-│   │       ├── router.py ✅ Complete - API v1 router
-│   │       └── endpoints/ 🔄 TODO - Individual endpoints
-│   ├── core/              ✅ Complete
-│   │   └── security.py   ✅ Complete - JWT & password utils
-│   ├── models/            ✅ Complete - User, Session, AuditLog, BlacklistedToken
-│   ├── schemas/           🔄 TODO - Request/response schemas
-│   ├── services/          🔄 TODO - Business logic
-│   ├── middleware/        🔄 TODO - Custom middleware
-│   └── tests/             🔄 TODO - Test implementation
-├── .env                   ✅ Complete - Environment config
-├── pyproject.toml         ✅ Complete - Dependencies
-├── Dockerfile             ✅ Complete - Container setup
-└── docker-compose.yml     ✅ Complete - Development setup
-```
-
-### Next Development Steps
-
-1. **Create Database Models**
-   ```bash
-   # Create User model in app/models/user.py
-   # Create base model in app/models/base.py
-   ```
-
-2. **Set up Database Migrations**
-   ```bash
-   # Initialize Alembic (when models are ready)
-   alembic init alembic
-   alembic revision --autogenerate -m "Create initial tables"
-   alembic upgrade head
-   ```
-
-3. **Implement Authentication Endpoints**
-   ```bash
-   # Create auth endpoints in app/api/v1/endpoints/auth.py
-   # Create user schemas in app/schemas/user.py
-   ```
-
-### Current Development Commands
-
-```bash
-# Start development server
-uvicorn app.main:app --reload
-
-# Test current setup
-python -c "from app.main import app; print('✅ Backend ready for development')"
-
-# Install additional dependencies as needed
-uv pip install <package-name>
-```
-
-### Running Tests (When Implemented)
-
-```bash
-pytest
-```
-
-### Code Formatting (When Implemented)
-
-```bash
-black .
-isort .
-```
-
-## Current Status
-
-### ✅ What's Working
-- FastAPI application with automatic OpenAPI documentation
-- Environment-based configuration management  
-- **Database models implemented**: User, Session, AuditLog, BlacklistedToken
-- **Database migrations with Alembic** (SQLite working, PostgreSQL ready)
-- JWT security utilities (password hashing, token generation)
-- CORS middleware configured for frontend integration
-- Health check endpoint
-
-### 🚧 In Development  
-- Authentication endpoints (register, login, logout)
-- User management endpoints
-- Error handling middleware
-- PostgreSQL setup (models ready, need connection)
-
-## API Endpoints
-
-### Available Now
 - `GET /` - API information and status
-- `GET /health` - Health check
+- `GET /health` - Basic health check
 - `GET /api/v1/` - API v1 information
-
-### Coming Soon (Implementation Planned)
-- `POST /api/v1/auth/register` - User registration  
+- `POST /api/v1/auth/register` - User registration
 - `POST /api/v1/auth/login` - User login
 - `POST /api/v1/auth/logout` - User logout
 - `POST /api/v1/auth/refresh` - Token refresh
 - `GET /api/v1/auth/me` - Current user info
+- `GET /api/v1/auth/sessions` - User sessions
+- `POST /api/v1/auth/password-reset` - Password reset
 - `GET /api/v1/users/` - List users
 - `GET /api/v1/users/{id}` - Get user by ID
+- `PUT /api/v1/users/{id}` - Update user
+- `DELETE /api/v1/users/{id}` - Delete user
+- `GET /health/database` - Database connectivity status
+- `GET /health/database/detailed` - Detailed health info
+- `GET /metrics/database` - Performance metrics
+- `GET /metrics/database/queries` - Query analytics
 
-## Configuration
+## ⚙️ Configuration
 
-The application uses environment variables for configuration. See `.env.example` for all available options.
+- All configuration is via environment variables (`.env` and `.env.example`)
+- Key variables: `DATABASE_URL`, `SECRET_KEY`, `BACKEND_CORS_ORIGINS`, `FRONTEND_BASE_URL`, etc.
 
-### Key Configuration Options
-
-- `DATABASE_URL`: Database connection string
-- `SECRET_KEY`: JWT secret key (change in production!)
-- `BACKEND_CORS_ORIGINS`: Allowed CORS origins
-- `DEBUG`: Enable debug mode
-- `REDIS_URL`: Redis connection string
-
-## Security
+## 🔒 Security
 
 - JWT-based authentication
-- Password hashing with bcrypt
+- Password hashing (bcrypt)
+- Account lockout protection
+- Audit logging
 - CORS configuration
-- Rate limiting
-- Input validation with Pydantic
+- Input validation (Pydantic)
 - SQL injection prevention
 
-## Performance
+## 📈 Performance
 
-- Fully asynchronous with async/await
+- Fully async with async/await
 - Connection pooling
-- Redis caching
-- Optimized database queries
-- Background tasks support
+- Retry logic for transient failures
+- Performance monitoring
+- Redis caching (if enabled)
 
-## Contributing
+## 📊 Monitoring & Analytics
+
+- Health monitoring
+- Query analytics
+- Security monitoring
+
+## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Add tests
+4. Add tests (when test suite is implemented)
 5. Submit a pull request
 
-## License
+## 📄 License
 
 This project is licensed under the MIT License.
+
+## 📚 Additional Documentation
+
+- [Database Improvements Summary](./DATABASE_IMPROVEMENTS_SUMMARY.md)
+- [Planning](./Planning.md)
+
+## 🔑 Authentication & Email Flows
+
+- **Email Verification**: Users must verify their email after registration. A verification link is sent using the configured email service. The link uses the `FRONTEND_BASE_URL` from your `.env`.
+- **Password Reset**: Users can request a password reset. The reset link is also sent using the configured email service and uses the same frontend URL config.
+- **Reusable URL Helper**: All links in emails are generated using a single helper, so changing `FRONTEND_BASE_URL` updates all links.
+
+## ⚙️ Environment Configuration
+
+- **.env**: The file actually used by the backend. Contains real secrets and config. **Never commit this to public repos.**
+- **.env.example**: Template for onboarding. Copy to `.env` and fill in your values.
+- **Key variables:**
+  - `DATABASE_URL` (default: SQLite for dev)
+  - `FROM_EMAIL`, `RESEND_API_KEY` (for email delivery)
+  - `FRONTEND_BASE_URL` (must match your running frontend, e.g. `http://localhost:3000`)
+
+## 🔄 Recent Improvements
+
+- Email verification and password reset flows are fully production-ready.
+- All URLs in emails are absolute and environment-driven.
+- Error handling and user feedback are robust and user-friendly.

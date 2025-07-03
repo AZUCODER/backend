@@ -7,8 +7,9 @@ password hashing, and other security-related functions.
 
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
+import secrets
 
-from jose import jwt
+from jose import jwt, JWTError
 from passlib.context import CryptContext
 
 from app.config import get_settings
@@ -39,8 +40,13 @@ def create_access_token(subject: str, expires_delta: Optional[timedelta] = None)
         expire = datetime.utcnow() + timedelta(
             minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
         )
-    
-    to_encode = {"exp": expire, "sub": str(subject)}
+
+    to_encode = {
+        "exp": expire,
+        "sub": str(subject),
+        "iat": datetime.utcnow(),  # Issued at
+        "jti": secrets.token_urlsafe(8),  # Unique token identifier
+    }
     encoded_jwt = jwt.encode(
         to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM
     )
@@ -64,8 +70,14 @@ def create_refresh_token(subject: str, expires_delta: Optional[timedelta] = None
         expire = datetime.utcnow() + timedelta(
             minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES
         )
-    
-    to_encode = {"exp": expire, "sub": str(subject), "type": "refresh"}
+
+    to_encode = {
+        "exp": expire,
+        "sub": str(subject),
+        "type": "refresh",
+        "iat": datetime.utcnow(),  # Issued at
+        "jti": secrets.token_urlsafe(8),  # Unique token identifier
+    }
     encoded_jwt = jwt.encode(
         to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM
     )
@@ -157,5 +169,5 @@ def verify_password_reset_token(token: str) -> Optional[str]:
         if decoded_token.get("type") != "reset":
             return None
         return decoded_token.get("sub")
-    except jwt.JWTError:
-        return None 
+    except JWTError:
+        return None

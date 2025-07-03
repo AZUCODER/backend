@@ -12,9 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.core.security import get_password_hash, verify_password
-from app.models.user import User, UserCreate, UserUpdate
+from app.models.user import User, UserCreate, UserUpdate, UserRole
 from app.models.session import Session
 from app.models.audit import AuditLog, AuditEventType
+from app.config import get_settings
+from app.services.email_service import send_email_via_resend
+
+settings = get_settings()
 
 
 async def get_user_by_email(db: AsyncSession, email: str) -> Optional[User]:
@@ -79,6 +83,9 @@ async def create_user(db: AsyncSession, user_create: UserCreate) -> User:
     # Hash the password
     hashed_password = get_password_hash(user_create.password)
 
+    # Determine role
+    role = user_create.role if user_create.role is not None else UserRole.USER
+
     # Create user instance
     user = User(
         email=user_create.email,
@@ -89,6 +96,7 @@ async def create_user(db: AsyncSession, user_create: UserCreate) -> User:
         full_name=user_create.full_name,
         is_active=True,
         is_verified=False,  # Email verification required
+        role=role,
     )
 
     # Add to database
@@ -161,9 +169,11 @@ async def authenticate_user(
         # Increment failed login attempts
         user.failed_login_attempts += 1
 
-        # Lock account after 5 failed attempts
-        if user.failed_login_attempts >= 5:
-            user.account_locked_until = datetime.utcnow() + timedelta(minutes=30)
+        # Lock account after configurable failed attempts
+        if user.failed_login_attempts >= settings.ACCOUNT_LOCKOUT_THRESHOLD:
+            user.account_locked_until = datetime.utcnow() + timedelta(
+                minutes=settings.ACCOUNT_LOCKOUT_DURATION_MINUTES
+            )
 
             # Create audit log for account lock
             audit_log = AuditLog.create_log(
@@ -176,6 +186,28 @@ async def authenticate_user(
                 success=True,
             )
             db.add(audit_log)
+
+            # Send lockout notification email (fire and forget)
+            if user.email:
+                try:
+                    import asyncio
+
+                    asyncio.create_task(
+                        send_email_via_resend(
+                            to_email=user.email,
+                            subject="Your account has been locked",
+                            html_body=f"""
+                                <p>Hello {user.username},</p>
+                                <p>Your account has been locked due to too many failed login attempts.</p>
+                                <p>It will be unlocked after {settings.ACCOUNT_LOCKOUT_DURATION_MINUTES} minutes.</p>
+                                <p>If this wasn't you, please contact support immediately.</p>
+                                <p>Thank you,<br/>Security Team</p>
+                            """,
+                        )
+                    )
+                except Exception as e:
+                    # Log but do not block login flow
+                    print(f"Failed to send lockout email: {e}")
 
         # Create audit log for failed login
         audit_log = AuditLog.create_log(
@@ -206,6 +238,22 @@ async def authenticate_user(
             user_agent=user_agent,
             success=False,
             error_message="Account is inactive",
+        )
+        db.add(audit_log)
+        await db.commit()
+        return None
+
+    # Enforce email verification before allowing login
+    if not user.is_verified:
+        audit_log = AuditLog.create_log(
+            event_type=AuditEventType.UNAUTHORIZED_ACCESS_ATTEMPT,
+            event_description=f"Login attempt with unverified email: {user.username}",
+            user_id=user.id,
+            username=user.username,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            success=False,
+            error_message="Email not verified",
         )
         db.add(audit_log)
         await db.commit()

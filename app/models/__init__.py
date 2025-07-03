@@ -9,6 +9,7 @@ from app.models.base import BaseModel
 from app.models.user import User, UserBase, UserCreate, UserUpdate, UserResponse
 from app.models.session import Session, BlacklistedToken, SessionResponse, SessionCreate
 from app.models.audit import AuditLog, AuditEventType, AuditLogResponse, AuditLogFilter
+from app.models.email_verification import EmailVerificationToken
 
 __all__ = [
     # Base model
@@ -29,4 +30,6 @@ __all__ = [
     "AuditEventType",
     "AuditLogResponse",
     "AuditLogFilter",
+    # Email verification
+    "EmailVerificationToken",
 ]
