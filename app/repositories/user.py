@@ -81,17 +81,17 @@ class UserRepository(BaseRepository[User]):
         search_term = f"%{query}%"
 
         conditions = [
-            User.email.ilike(search_term),
-            User.username.ilike(search_term),
+            getattr(User, "email").ilike(search_term),
+            getattr(User, "username").ilike(search_term),
         ]
 
         # Add name search conditions if fields exist
-        if User.first_name:
-            conditions.append(User.first_name.ilike(search_term))
-        if User.last_name:
-            conditions.append(User.last_name.ilike(search_term))
-        if User.full_name:
-            conditions.append(User.full_name.ilike(search_term))
+        if hasattr(User, "first_name"):
+            conditions.append(getattr(User, "first_name").ilike(search_term))
+        if hasattr(User, "last_name"):
+            conditions.append(getattr(User, "last_name").ilike(search_term))
+        if hasattr(User, "full_name"):
+            conditions.append(getattr(User, "full_name").ilike(search_term))
 
         statement = select(User).where(or_(*conditions))
 
@@ -142,7 +142,8 @@ class UserRepository(BaseRepository[User]):
         now = datetime.utcnow()
         statement = select(User).where(
             and_(
-                User.account_locked_until.is_not(None), User.account_locked_until > now
+                getattr(User, "account_locked_until").is_not(None),
+                getattr(User, "account_locked_until") > now,
             )
         )
         result = await self.db.execute(statement)
@@ -159,8 +160,8 @@ class UserRepository(BaseRepository[User]):
             update(User)
             .where(
                 and_(
-                    User.account_locked_until.is_not(None),
-                    User.account_locked_until < now,
+                    getattr(User, "account_locked_until").is_not(None),
+                    getattr(User, "account_locked_until") < now,
                 )
             )
             .values(account_locked_until=None, failed_login_attempts=0, updated_at=now)
@@ -178,7 +179,12 @@ class UserRepository(BaseRepository[User]):
 
         statement = (
             select(User)
-            .where(or_(User.last_login.is_(None), User.last_login < cutoff_date))
+            .where(
+                or_(
+                    getattr(User, "last_login").is_(None),
+                    getattr(User, "last_login") < cutoff_date,
+                )
+            )
             .offset(skip)
             .limit(limit)
         )

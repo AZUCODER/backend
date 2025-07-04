@@ -21,7 +21,7 @@ class Session(BaseModel, table=True):
     functionality for security.
     """
 
-    __tablename__ = "sessions"
+    __tablename__: str = "sessions"
 
     # User relationship
     user_id: int = Field(foreign_key="users.id", nullable=False, index=True)
@@ -63,7 +63,7 @@ class BlacklistedToken(BaseModel, table=True):
     Stores revoked tokens to prevent their reuse until expiration.
     """
 
-    __tablename__ = "blacklisted_tokens"
+    __tablename__: str = "blacklisted_tokens"
 
     # Token information
     jti: str = Field(unique=True, nullable=False, index=True)  # JWT ID

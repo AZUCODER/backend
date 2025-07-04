@@ -243,8 +243,8 @@ async def authenticate_user(
         await db.commit()
         return None
 
-    # Enforce email verification before allowing login
-    if not user.is_verified:
+    # Enforce email verification before allowing login, except in DEBUG mode
+    if not user.is_verified and not settings.DEBUG:
         audit_log = AuditLog.create_log(
             event_type=AuditEventType.UNAUTHORIZED_ACCESS_ATTEMPT,
             event_description=f"Login attempt with unverified email: {user.username}",

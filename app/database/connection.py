@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy import event, text
 from sqlalchemy.exc import SQLAlchemyError
+import inspect
 
 from app.config import get_settings
 
@@ -63,12 +64,18 @@ class DatabaseConfig:
 
     def get_postgresql_config(self) -> Dict[str, Any]:
         """Get PostgreSQL-specific configuration"""
+        # Use the generic "options" parameter accepted by both psycopg2 and psycopg
+        # to pass runtime parameters instead of the psycopg-specific "server_settings".
+        # This improves compatibility with different driver versions and avoids errors
+        # such as: "invalid connection option \"server_settings\"".
+        option_str = (
+            f"-c application_name=fastapi_backend "
+            f"-c jit=off "
+            f"-c statement_timeout={self.query_timeout}s"
+        )
+
         return {
-            "server_settings": {
-                "application_name": "fastapi_backend",
-                "jit": "off",  # Disable JIT for faster startup
-                "statement_timeout": f"{self.query_timeout}s",
-            }
+            "options": option_str,
         }
 
     def get_sqlite_config(self) -> Dict[str, Any]:
@@ -116,7 +123,10 @@ class DatabaseManager:
 
         # Add database-specific configuration
         if db_url.startswith("postgresql"):
-            engine_kwargs["connect_args"] = self._config.get_postgresql_config()
+            # asyncpg does NOT accept the "options" parameter – only apply
+            # custom connect_args when the sync/psycopg driver is in use.
+            if "+psycopg" in db_url or "+psycopg2" in db_url:
+                engine_kwargs["connect_args"] = self._config.get_postgresql_config()
         elif db_url.startswith("sqlite"):
             engine_kwargs["connect_args"] = self._config.get_sqlite_config()
 
@@ -184,13 +194,29 @@ class DatabaseManager:
             yield session
         except SQLAlchemyError as e:
             logger.error(f"Database session error: {e}")
-            if session:
-                await session.rollback()
+            if isinstance(session, AsyncSession):
+                try:
+                    rollback = getattr(session, "rollback", None)
+                    if rollback is not None and callable(rollback):
+                        if inspect.iscoroutinefunction(rollback):
+                            await rollback()
+                        else:
+                            rollback()
+                except Exception as rollback_exc:
+                    logger.error(f"Session rollback failed: {rollback_exc}")
             raise
         except Exception as e:
             logger.error(f"Unexpected session error: {e}")
-            if session:
-                await session.rollback()
+            if isinstance(session, AsyncSession):
+                try:
+                    rollback = getattr(session, "rollback", None)
+                    if rollback is not None and callable(rollback):
+                        if inspect.iscoroutinefunction(rollback):
+                            await rollback()
+                        else:
+                            rollback()
+                except Exception as rollback_exc:
+                    logger.error(f"Session rollback failed: {rollback_exc}")
             raise
         finally:
             if session:
@@ -229,17 +255,21 @@ class DatabaseManager:
         Returns:
             Dict containing pool statistics
         """
-        pool = self.engine.pool
-
-        return {
-            "pool_size": pool.size(),
-            "checked_in": pool.checkedin(),
-            "checked_out": pool.checkedout(),
-            "overflow": pool.overflow(),
-            "total_connections": self._connection_count,
-            "health_status": self._health_status,
-            "last_health_check": self._last_health_check,
-        }
+        pool = self.engine.sync_engine.pool
+        pool_status = {}
+        for attr in ["size", "checkedin", "checkedout", "overflow"]:
+            if hasattr(pool, attr):
+                pool_status[attr] = getattr(pool, attr)()
+            else:
+                pool_status[attr] = None
+        pool_status.update(
+            {
+                "total_connections": self._connection_count,
+                "health_status": self._health_status,
+                "last_health_check": self._last_health_check,
+            }
+        )
+        return pool_status
 
     async def close(self):
         """Close database connections and cleanup resources"""

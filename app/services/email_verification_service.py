@@ -86,7 +86,7 @@ async def validate_verification_token(
     token_hash = _hash_token(token)
     stmt = select(EmailVerificationToken).where(
         EmailVerificationToken.token_hash == token_hash,
-        EmailVerificationToken.used.is_(False),
+        getattr(EmailVerificationToken, "used").is_(False),
         EmailVerificationToken.expires_at > datetime.utcnow(),
     )
     res = await db.execute(stmt)
@@ -110,7 +110,7 @@ async def consume_verification_token(
     token_hash = _hash_token(token)
     stmt = select(EmailVerificationToken).where(
         EmailVerificationToken.token_hash == token_hash,
-        EmailVerificationToken.used.is_(False),
+        getattr(EmailVerificationToken, "used").is_(False),
         EmailVerificationToken.expires_at > datetime.utcnow(),
     )
     res = await db.execute(stmt)
@@ -145,7 +145,7 @@ async def consume_verification_token(
 async def invalidate_existing_tokens(db: AsyncSession, user_id: int) -> int:
     stmt = select(EmailVerificationToken).where(
         EmailVerificationToken.user_id == user_id,
-        EmailVerificationToken.used.is_(False),
+        getattr(EmailVerificationToken, "used").is_(False),
     )
     res = await db.execute(stmt)
     records = res.scalars().all()
@@ -163,7 +163,7 @@ async def cleanup_expired_tokens(db: AsyncSession) -> int:
     records = res.scalars().all()
     count = len(records)
     for rec in records:
-        db.delete(rec)
+        await db.delete(rec)
     await db.commit()
     return count
 

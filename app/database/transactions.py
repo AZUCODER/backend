@@ -11,6 +11,7 @@ import asyncio
 from typing import Callable, Any, Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError, DisconnectionError, OperationalError
+from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
@@ -170,7 +171,7 @@ def transactional(
                     # Set isolation level if specified
                     if isolation_level:
                         await session.execute(
-                            f"SET TRANSACTION ISOLATION LEVEL {isolation_level}"
+                            text(f"SET TRANSACTION ISOLATION LEVEL {isolation_level}")
                         )
 
                     result = await func(*args, **kwargs)
@@ -214,10 +215,12 @@ class TransactionContext:
         try:
             if exc_type is None:
                 # No exception, commit the transaction
-                await self._transaction.commit()
+                if self._transaction is not None:
+                    await self._transaction.commit()
             else:
                 # Exception occurred, rollback
-                await self._transaction.rollback()
+                if self._transaction is not None:
+                    await self._transaction.rollback()
 
                 # If it's a retriable error and retry is enabled, reraise for retry
                 if (
@@ -231,7 +234,8 @@ class TransactionContext:
 
         except Exception as e:
             logger.error(f"Error in transaction context cleanup: {e}")
-            await self._transaction.rollback()
+            if self._transaction is not None:
+                await self._transaction.rollback()
             raise
 
     async def execute_with_retry(self, operation: Callable, *args, **kwargs) -> Any:

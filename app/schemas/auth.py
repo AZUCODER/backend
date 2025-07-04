@@ -115,6 +115,7 @@ class UserProfileResponse(BaseModel):
     is_active: bool
     is_superuser: bool
     is_verified: bool
+    role: str  # Add role field
     created_at: str  # ISO format datetime string
     last_login: Optional[str] = None  # ISO format datetime string
     email_verified_at: Optional[str] = None  # ISO format datetime string

@@ -46,7 +46,12 @@ async def get_db_legacy() -> AsyncGenerator[AsyncSession, None]:
     Yields:
         AsyncSession: Database session
     """
-    from app.database import get_session_legacy
+    import importlib
+
+    db_module = importlib.import_module("app.database")
+    get_session_legacy = getattr(db_module, "get_session_legacy", None)
+    if get_session_legacy is None:
+        raise RuntimeError("get_session_legacy is not available in app.database")
 
     async for session in get_session_legacy():
         yield session
@@ -78,7 +83,8 @@ async def get_db_health() -> Dict[str, Any]:
     """
     from app.database.connection import db_manager
 
-    return await db_manager.health_check()
+    healthy = await db_manager.health_check()
+    return {"healthy": healthy}
 
 
 async def get_db_pool_status() -> Dict[str, Any]:
@@ -146,7 +152,14 @@ async def get_current_user_id(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Could not validate credentials",
             )
-        return user_id
+        # Token payloads store subject as string; cast to int for DB queries
+        try:
+            return int(user_id)
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid user ID in token",
+            )
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

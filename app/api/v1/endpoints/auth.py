@@ -144,6 +144,8 @@ async def register(
 
         # Generate email verification token and send email (fire and forget)
         try:
+            if user.id is None:
+                raise ValueError("User ID cannot be None")
             token = await create_verification_token(db, user.id, user.username)
             import asyncio
 
@@ -402,6 +404,7 @@ async def get_current_user_profile(
         is_active=current_user.is_active,
         is_superuser=current_user.is_superuser,
         is_verified=current_user.is_verified,
+        role=current_user.role.value,
         created_at=current_user.created_at.isoformat(),
         last_login=(
             current_user.last_login.isoformat() if current_user.last_login else None
@@ -706,13 +709,13 @@ async def resend_verification_email(
             message="If the email exists and is not verified, a verification link has been sent.",
             success=True,
         )
-
     # Generate new token and send email
-    token = await create_verification_token(db, user.id, user.username)
-    try:
-        await send_verification_email(db, user.email, user.username, token)
-    except Exception as e:
-        print(f"Failed to resend verification email: {e}")
+    if user.id is not None:
+        token = await create_verification_token(db, user.id, user.username)
+        try:
+            await send_verification_email(db, user.email, user.username, token)
+        except Exception as e:
+            print(f"Failed to resend verification email: {e}")
 
     return AuthResponse(
         message="If the email exists and is not verified, a verification link has been sent.",

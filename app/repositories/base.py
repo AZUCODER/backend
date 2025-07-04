@@ -36,7 +36,7 @@ class BaseRepository(Generic[T]):
 
     async def get(self, id: int) -> Optional[T]:
         """Get record by ID"""
-        statement = select(self.model).where(self.model.id == id)
+        statement = select(self.model).where(getattr(self.model, "id") == id)
         result = await self.db.execute(statement)
         return result.scalars().first()
 
@@ -117,7 +117,7 @@ class BaseRepository(Generic[T]):
 
     async def count(self, filters: Optional[Dict[str, Any]] = None) -> int:
         """Count total records with optional filters"""
-        statement = select(func.count(self.model.id))
+        statement = select(func.count(getattr(self.model, "id")))
 
         # Apply filters if provided
         if filters:
@@ -126,10 +126,14 @@ class BaseRepository(Generic[T]):
                     statement = statement.where(getattr(self.model, field) == value)
 
         result = await self.db.execute(statement)
-        return result.scalar()
+        count_value = result.scalar() or 0
+        return int(count_value)
 
     async def exists(self, id: int) -> bool:
         """Check if record exists by ID"""
-        statement = select(func.count(self.model.id)).where(self.model.id == id)
+        statement = select(func.count(getattr(self.model, "id"))).where(
+            getattr(self.model, "id") == id
+        )
         result = await self.db.execute(statement)
-        return result.scalar() > 0
+        count_value = result.scalar() or 0
+        return count_value > 0

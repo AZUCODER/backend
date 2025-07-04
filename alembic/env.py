@@ -15,24 +15,44 @@ from alembic import context
 # Import your SQLModel metadata
 from sqlmodel import SQLModel
 
-# Import all models so they are registered with SQLModel.metadata
-from app.models import User, Session, BlacklistedToken, AuditLog
+# Import * to ensure **all** models are registered regardless of future
+# additions – __all__ is defined in app.models.__init__
+from app import models  # noqa: F401  (imports side-effects)
 from app.config import get_settings
 
 # This is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
 
-# Get settings
+# ---------------------------------------------------------------------------
+# Runtime configuration – inject the DB URL taken from runtime settings so we
+# never need to hard-code credentials inside `alembic.ini`.
+# ---------------------------------------------------------------------------
+
 settings = get_settings()
 
-# Set the sqlalchemy.url in alembic config to our DATABASE_URL
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# Alembic requires a *sync* driver. If the main DATABASE_URL is async, attempt
+# to down-convert (e.g. asyncpg ➜ psycopg).
+database_url = settings.DATABASE_URL
 
-# Interpret the config file for Python logging.
-# This line sets up loggers basically.
+if "+asyncpg" in database_url:
+    database_url = database_url.replace("+asyncpg", "+psycopg")
+elif "+aiosqlite" in database_url:
+    database_url = database_url.replace("+aiosqlite", "")
+
+config.set_main_option("sqlalchemy.url", database_url)
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+# Reduce Alembic's default spam in INFO level if user prefers a higher level.
+root_logger = logging.getLogger()
+if root_logger.level > logging.INFO:
+    logging.getLogger("sqlalchemy.engine").setLevel(root_logger.level)
 
 # Add your model's MetaData object here for 'autogenerate' support
 target_metadata = SQLModel.metadata
