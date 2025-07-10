@@ -1,4 +1,6 @@
 from datetime import datetime
+from typing import Optional
+import uuid
 from sqlmodel import Field, SQLModel
 
 
@@ -7,8 +9,10 @@ class EmailVerificationToken(SQLModel, table=True):
 
     __tablename__: str = "email_verification_tokens"
 
-    id: int | None = Field(default=None, primary_key=True)
-    user_id: int = Field(foreign_key="users.id", nullable=False, index=True)
+    id: Optional[str] = Field(
+        default_factory=lambda: str(uuid.uuid4()), primary_key=True
+    )
+    user_id: str = Field(foreign_key="users.id", nullable=False, index=True)
     token_hash: str = Field(unique=True, max_length=128, index=True)
     issued_at: datetime = Field(nullable=False)
     expires_at: datetime = Field(nullable=False)

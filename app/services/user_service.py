@@ -17,13 +17,14 @@ from app.models.session import Session
 from app.models.audit import AuditLog, AuditEventType
 from app.config import get_settings
 from app.services.email_service import send_email_via_resend
+from app.services.redis_service import redis_service
 
 settings = get_settings()
 
 
 async def get_user_by_email(db: AsyncSession, email: str) -> Optional[User]:
     """
-    Get user by email address.
+    Get user by email address with caching.
 
     Args:
         db: Database session
@@ -32,14 +33,93 @@ async def get_user_by_email(db: AsyncSession, email: str) -> Optional[User]:
     Returns:
         User object if found, None otherwise
     """
+    # Check cache first
+    cache_key = f"user_email:{email}"
+    cached_user = redis_service.get_cache(cache_key)
+    if cached_user:
+        # Convert cached data back to User object
+        try:
+            # Convert role string back to UserRole enum if needed
+            if cached_user.get("role"):
+                from app.models.user import UserRole
+
+                if isinstance(cached_user["role"], str):
+                    cached_user["role"] = UserRole(cached_user["role"])
+
+            # Convert datetime strings back to datetime objects
+            from datetime import datetime
+            from uuid import UUID
+
+            # Convert UUID string back to UUID object
+            if cached_user.get("id"):
+                cached_user["id"] = UUID(cached_user["id"])
+
+            datetime_fields = [
+                "account_locked_until",
+                "last_login",
+                "email_verified_at",
+                "created_at",
+                "updated_at",
+            ]
+            for field in datetime_fields:
+                if cached_user.get(field):
+                    cached_user[field] = datetime.fromisoformat(cached_user[field])
+
+            return User(**cached_user)
+        except Exception as e:
+            # If cache data is corrupted, ignore it and fetch from DB
+            print(f"Cache data corrupted for {email}: {e}")
+            redis_service.delete(cache_key)
+
+    # Query database
     statement = select(User).where(User.email == email)
     result = await db.execute(statement)
-    return result.scalars().first()
+    user = result.scalars().first()
+
+    # Cache user data for 5 minutes
+    if user:
+        user_dict = {
+            "id": str(user.id),  # Convert UUID to string for JSON serialization
+            "email": user.email,
+            "username": user.username,
+            "hashed_password": user.hashed_password,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "full_name": user.full_name,
+            "is_active": user.is_active,
+            "is_verified": user.is_verified,
+            # Always store role as string for cache consistency
+            "role": (
+                user.role.value
+                if hasattr(user.role, "value")
+                else str(user.role) if user.role else None
+            ),
+            "failed_login_attempts": user.failed_login_attempts,
+            "account_locked_until": (
+                user.account_locked_until.isoformat()
+                if user.account_locked_until
+                else None
+            ),
+            # Add missing datetime fields
+            "is_superuser": user.is_superuser,
+            "last_login": user.last_login.isoformat() if user.last_login else None,
+            "email_verified_at": (
+                user.email_verified_at.isoformat() if user.email_verified_at else None
+            ),
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "updated_at": user.updated_at.isoformat() if user.updated_at else None,
+            "oauth_provider": user.oauth_provider,
+            "oauth_sub": user.oauth_sub,
+            "avatar_url": user.avatar_url,
+        }
+        redis_service.set_cache(cache_key, user_dict, expire=300)
+
+    return user
 
 
 async def get_user_by_username(db: AsyncSession, username: str) -> Optional[User]:
     """
-    Get user by username.
+    Get user by username with caching.
 
     Args:
         db: Database session
@@ -48,25 +128,191 @@ async def get_user_by_username(db: AsyncSession, username: str) -> Optional[User
     Returns:
         User object if found, None otherwise
     """
+    # Check cache first
+    cache_key = f"user_username:{username}"
+    cached_user = redis_service.get_cache(cache_key)
+    if cached_user:
+        # Convert cached data back to User object
+        try:
+            # Convert role string back to UserRole enum if needed
+            if cached_user.get("role"):
+                from app.models.user import UserRole
+
+                if isinstance(cached_user["role"], str):
+                    cached_user["role"] = UserRole(cached_user["role"])
+
+            # Convert datetime strings back to datetime objects
+            from datetime import datetime
+            from uuid import UUID
+
+            # Convert UUID string back to UUID object
+            if cached_user.get("id"):
+                cached_user["id"] = UUID(cached_user["id"])
+
+            datetime_fields = [
+                "account_locked_until",
+                "last_login",
+                "email_verified_at",
+                "created_at",
+                "updated_at",
+            ]
+            for field in datetime_fields:
+                if cached_user.get(field):
+                    cached_user[field] = datetime.fromisoformat(cached_user[field])
+
+            return User(**cached_user)
+        except Exception as e:
+            # If cache data is corrupted, ignore it and fetch from DB
+            print(f"Cache data corrupted for username {username}: {e}")
+            redis_service.delete(cache_key)
+
+    # Query database
     statement = select(User).where(User.username == username)
     result = await db.execute(statement)
-    return result.scalars().first()
+    user = result.scalars().first()
+
+    # Cache user data for 5 minutes
+    if user:
+        user_dict = {
+            "id": str(user.id),  # Convert UUID to string for JSON serialization
+            "email": user.email,
+            "username": user.username,
+            "hashed_password": user.hashed_password,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "full_name": user.full_name,
+            "is_active": user.is_active,
+            "is_verified": user.is_verified,
+            # Always store role as string for cache consistency
+            "role": (
+                user.role.value
+                if hasattr(user.role, "value")
+                else str(user.role) if user.role else None
+            ),
+            "failed_login_attempts": user.failed_login_attempts,
+            "account_locked_until": (
+                user.account_locked_until.isoformat()
+                if user.account_locked_until
+                else None
+            ),
+            # Add missing datetime fields
+            "is_superuser": user.is_superuser,
+            "last_login": user.last_login.isoformat() if user.last_login else None,
+            "email_verified_at": (
+                user.email_verified_at.isoformat() if user.email_verified_at else None
+            ),
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "updated_at": user.updated_at.isoformat() if user.updated_at else None,
+            "oauth_provider": user.oauth_provider,
+            "oauth_sub": user.oauth_sub,
+            "avatar_url": user.avatar_url,
+        }
+        redis_service.set_cache(cache_key, user_dict, expire=300)
+
+    return user
 
 
-async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[User]:
+async def get_user_by_id(db: AsyncSession, user_id: str) -> Optional[User]:
     """
-    Get user by ID.
+    Get user by ID with caching.
 
     Args:
         db: Database session
-        user_id: User ID
+        user_id: User ID (UUID string)
 
     Returns:
         User object if found, None otherwise
     """
+    # Check cache first
+    cache_key = f"user_id:{user_id}"
+    cached_user = redis_service.get_cache(cache_key)
+    if cached_user:
+        # Convert cached data back to User object
+        try:
+            # Convert role string back to UserRole enum if needed
+            if cached_user.get("role"):
+                from app.models.user import UserRole
+
+                if isinstance(cached_user["role"], str):
+                    cached_user["role"] = UserRole(cached_user["role"])
+
+            # Convert datetime strings back to datetime objects
+            from datetime import datetime
+            from uuid import UUID
+
+            # Convert UUID string back to UUID object
+            if cached_user.get("id"):
+                cached_user["id"] = UUID(cached_user["id"])
+
+            datetime_fields = [
+                "account_locked_until",
+                "last_login",
+                "email_verified_at",
+                "created_at",
+                "updated_at",
+            ]
+            for field in datetime_fields:
+                if cached_user.get(field):
+                    cached_user[field] = datetime.fromisoformat(cached_user[field])
+
+            return User(**cached_user)
+        except Exception as e:
+            # If cache data is corrupted, ignore it and fetch from DB
+            print(f"Cache data corrupted for user_id {user_id}: {e}")
+            redis_service.delete(cache_key)
+
+    # Query database
     statement = select(User).where(User.id == user_id)
     result = await db.execute(statement)
-    return result.scalars().first()
+    user = result.scalars().first()
+
+    # Cache user data for 5 minutes
+    if user:
+        user_dict = {
+            "id": str(user.id),  # Convert UUID to string for JSON serialization
+            "email": user.email,
+            "username": user.username,
+            "hashed_password": user.hashed_password,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "full_name": user.full_name,
+            "is_active": user.is_active,
+            "is_verified": user.is_verified,
+            # Always store role as string for cache consistency
+            "role": (
+                user.role.value
+                if hasattr(user.role, "value")
+                else str(user.role) if user.role else None
+            ),
+            "failed_login_attempts": user.failed_login_attempts,
+            "account_locked_until": (
+                user.account_locked_until.isoformat()
+                if user.account_locked_until
+                else None
+            ),
+            # Add missing datetime fields
+            "is_superuser": user.is_superuser,
+            "last_login": user.last_login.isoformat() if user.last_login else None,
+            "email_verified_at": (
+                user.email_verified_at.isoformat() if user.email_verified_at else None
+            ),
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "updated_at": user.updated_at.isoformat() if user.updated_at else None,
+            "oauth_provider": user.oauth_provider,
+            "oauth_sub": user.oauth_sub,
+            "avatar_url": user.avatar_url,
+        }
+        redis_service.set_cache(cache_key, user_dict, expire=300)
+
+    return user
+
+
+def _invalidate_user_cache(user: User) -> None:
+    """Invalidate all cached data for a user."""
+    if user:
+        redis_service.delete(f"user_id:{user.id}")
+        redis_service.delete(f"user_email:{user.email}")
+        redis_service.delete(f"user_username:{user.username}")
 
 
 async def create_user(db: AsyncSession, user_create: UserCreate) -> User:
@@ -83,7 +329,7 @@ async def create_user(db: AsyncSession, user_create: UserCreate) -> User:
     # Hash the password
     hashed_password = get_password_hash(user_create.password)
 
-    # Determine role
+    # Determine role - default to USER for new registrations
     role = user_create.role if user_create.role is not None else UserRole.USER
 
     # Create user instance
@@ -103,6 +349,43 @@ async def create_user(db: AsyncSession, user_create: UserCreate) -> User:
     db.add(user)
     await db.commit()
     await db.refresh(user)
+
+    # Cache the new user
+    user_dict = {
+        "id": user.id,
+        "email": user.email,
+        "username": user.username,
+        "hashed_password": user.hashed_password,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "full_name": user.full_name,
+        "is_active": user.is_active,
+        "is_verified": user.is_verified,
+        # Always store role as string for cache consistency
+        "role": (
+            user.role.value
+            if hasattr(user.role, "value")
+            else str(user.role) if user.role else None
+        ),
+        "failed_login_attempts": user.failed_login_attempts,
+        "account_locked_until": (
+            user.account_locked_until.isoformat() if user.account_locked_until else None
+        ),
+        # Add missing datetime fields
+        "is_superuser": user.is_superuser,
+        "last_login": user.last_login.isoformat() if user.last_login else None,
+        "email_verified_at": (
+            user.email_verified_at.isoformat() if user.email_verified_at else None
+        ),
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+        "updated_at": user.updated_at.isoformat() if user.updated_at else None,
+        "oauth_provider": user.oauth_provider,
+        "oauth_sub": user.oauth_sub,
+        "avatar_url": user.avatar_url,
+    }
+    redis_service.set_cache(f"user_id:{user.id}", user_dict, expire=300)
+    redis_service.set_cache(f"user_email:{user.email}", user_dict, expire=300)
+    redis_service.set_cache(f"user_username:{user.username}", user_dict, expire=300)
 
     return user
 
@@ -153,7 +436,7 @@ async def authenticate_user(
         audit_log = AuditLog.create_log(
             event_type=AuditEventType.UNAUTHORIZED_ACCESS_ATTEMPT,
             event_description=f"Login attempt on locked account: {user.username}",
-            user_id=user.id,
+            user_id=str(user.id),
             username=user.username,
             ip_address=ip_address,
             user_agent=user_agent,
@@ -179,7 +462,7 @@ async def authenticate_user(
             audit_log = AuditLog.create_log(
                 event_type=AuditEventType.ACCOUNT_LOCKED,
                 event_description=f"Account locked due to {user.failed_login_attempts} failed login attempts",
-                user_id=user.id,
+                user_id=str(user.id),
                 username=user.username,
                 ip_address=ip_address,
                 user_agent=user_agent,
@@ -213,7 +496,7 @@ async def authenticate_user(
         audit_log = AuditLog.create_log(
             event_type=AuditEventType.LOGIN_FAILED,
             event_description=f"Failed login attempt for user: {user.username}",
-            user_id=user.id,
+            user_id=str(user.id),
             username=user.username,
             ip_address=ip_address,
             user_agent=user_agent,
@@ -223,7 +506,6 @@ async def authenticate_user(
         db.add(audit_log)
 
         await db.commit()
-        await db.refresh(user)
         return None
 
     # Check if user is active
@@ -232,7 +514,7 @@ async def authenticate_user(
         audit_log = AuditLog.create_log(
             event_type=AuditEventType.UNAUTHORIZED_ACCESS_ATTEMPT,
             event_description=f"Login attempt on inactive account: {user.username}",
-            user_id=user.id,
+            user_id=str(user.id),
             username=user.username,
             ip_address=ip_address,
             user_agent=user_agent,
@@ -248,7 +530,7 @@ async def authenticate_user(
         audit_log = AuditLog.create_log(
             event_type=AuditEventType.UNAUTHORIZED_ACCESS_ATTEMPT,
             event_description=f"Login attempt with unverified email: {user.username}",
-            user_id=user.id,
+            user_id=str(user.id),
             username=user.username,
             ip_address=ip_address,
             user_agent=user_agent,
@@ -268,7 +550,7 @@ async def authenticate_user(
     audit_log = AuditLog.create_log(
         event_type=AuditEventType.LOGIN_SUCCESS,
         event_description=f"Successful login for user: {user.username}",
-        user_id=user.id,
+        user_id=str(user.id),
         username=user.username,
         ip_address=ip_address,
         user_agent=user_agent,
@@ -277,20 +559,18 @@ async def authenticate_user(
     db.add(audit_log)
 
     await db.commit()
-    await db.refresh(user)
-
     return user
 
 
 async def update_user(
-    db: AsyncSession, user_id: int, user_update: UserUpdate
+    db: AsyncSession, user_id: str, user_update: UserUpdate
 ) -> Optional[User]:
     """
     Update user information.
 
     Args:
         db: Database session
-        user_id: User ID
+        user_id: User ID (UUID string)
         user_update: User update data
 
     Returns:
@@ -308,7 +588,9 @@ async def update_user(
     user.updated_at = datetime.utcnow()
 
     await db.commit()
-    await db.refresh(user)
+
+    # Invalidate user cache after update
+    _invalidate_user_cache(user)
 
     return user
 

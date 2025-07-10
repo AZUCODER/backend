@@ -13,6 +13,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_access_token
+from app.config import get_settings
 from app.database import get_session
 from app.database.monitoring import (
     get_query_metrics,
@@ -131,7 +132,7 @@ async def get_db_health_check() -> Dict[str, Any]:
 
 async def get_current_user_id(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-) -> int:
+) -> str:
     """
     Get current user ID from JWT token.
 
@@ -139,7 +140,7 @@ async def get_current_user_id(
         credentials: HTTP Authorization credentials
 
     Returns:
-        int: User ID
+        str: User ID as a UUID string
 
     Raises:
         HTTPException: If token is invalid or expired
@@ -147,19 +148,13 @@ async def get_current_user_id(
     try:
         payload = decode_access_token(credentials.credentials)
         user_id = payload.get("sub")
-        if user_id is None:
+        if not user_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Could not validate credentials",
             )
-        # Token payloads store subject as string; cast to int for DB queries
-        try:
-            return int(user_id)
-        except (TypeError, ValueError):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid user ID in token",
-            )
+        # No numeric casting – IDs are UUID strings
+        return str(user_id)
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -169,14 +164,14 @@ async def get_current_user_id(
 
 async def get_current_active_user(
     db: AsyncSession = Depends(get_db),
-    current_user_id: int = Depends(get_current_user_id),
+    current_user_id: str = Depends(get_current_user_id),
 ):
     """
     Get current active user from database.
 
     Args:
         db: Database session
-        current_user_id: Current user ID from token
+        current_user_id: Current user ID from token (UUID string)
 
     Returns:
         User: Current user object
@@ -253,12 +248,33 @@ def require_role(*roles: UserRole):
     return _require_role
 
 
-def require_verified_user(current_user=Depends(get_current_active_user)):
+async def require_verified_user(current_user=Depends(get_current_active_user)):
     """
     Dependency to require a user to have a verified email.
     Usage: Depends(require_verified_user)
     Raises 403 if the user is not verified.
     """
+    if not current_user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email not verified. Please verify your email to access this resource.",
+        )
+    return current_user
+
+
+async def require_verified_user_debug_aware(current_user=Depends(get_current_active_user)):
+    """
+    Dependency to require a user to have a verified email, but respects DEBUG setting.
+    Usage: Depends(require_verified_user_debug_aware)
+    Raises 403 if the user is not verified (unless DEBUG is True).
+    """
+    settings = get_settings()
+    
+    # In DEBUG mode, allow unverified users
+    if settings.DEBUG:
+        return current_user
+    
+    # In production, require verification
     if not current_user.is_verified:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

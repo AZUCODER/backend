@@ -35,7 +35,7 @@ def hash_token(token: str) -> str:
 
 
 async def create_password_reset_token(
-    db: AsyncSession, user_id: int, username: str, expires_in_hours: int = 24
+    db: AsyncSession, user_id: str, username: str, expires_in_hours: int = 24
 ) -> str:
     """
     Create a new password reset token for a user.
@@ -64,11 +64,10 @@ async def create_password_reset_token(
     )
     db.add(reset_token)
     await db.commit()
-    await db.refresh(reset_token)
     audit_log = AuditLog.create_log(
         event_type=AuditEventType.PASSWORD_RESET_REQUESTED,
         event_description=f"Password reset token created for user: {username}",
-        user_id=user_id,
+        user_id=str(user_id),
         username=username,
         success=True,
     )
@@ -167,7 +166,7 @@ async def consume_password_reset_token(
     audit_log = AuditLog.create_log(
         event_type=AuditEventType.PASSWORD_RESET_COMPLETED,
         event_description=f"Password reset token consumed for user: {username}",
-        user_id=user_id,
+        user_id=str(user_id),
         username=username,
         success=True,
     )
@@ -177,7 +176,7 @@ async def consume_password_reset_token(
     return (user_id, username)
 
 
-async def invalidate_existing_tokens(db: AsyncSession, user_id: int) -> int:
+async def invalidate_existing_tokens(db: AsyncSession, user_id: str) -> int:
     """
     Invalidate all existing password reset tokens for a user.
 

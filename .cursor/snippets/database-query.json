@@ -1,0 +1,11 @@
+{
+  "name": "SQLModel Database Query",
+  "description": "SQLModel select query with proper async execution",
+  "prefix": "dbquery",
+  "body": [
+    "statement = select(${1:ModelName}).where(${1:ModelName}.${2:field} == ${3:value})",
+    "result = await db.execute(statement)",
+    "return result.scalars().${4:first()}"
+  ],
+  "scope": "python"
+} 

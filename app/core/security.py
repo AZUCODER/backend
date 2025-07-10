@@ -23,14 +23,20 @@ pwd_context = CryptContext(
 )
 
 
-def create_access_token(subject: str, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(
+    *,
+    subject: str,
+    expires_delta: Optional[timedelta] = None,
+    additional_claims: Optional[Dict[str, Any]] = None,
+) -> str:
     """
     Create a JWT access token.
-    
+
     Args:
         subject: Subject (usually user ID) to encode in token
         expires_delta: Token expiration time delta
-        
+        additional_claims: Additional claims to include in the token
+
     Returns:
         str: Encoded JWT token
     """
@@ -47,20 +53,33 @@ def create_access_token(subject: str, expires_delta: Optional[timedelta] = None)
         "iat": datetime.utcnow(),  # Issued at
         "jti": secrets.token_urlsafe(8),  # Unique token identifier
     }
+
+    if additional_claims:
+        # Avoid overriding reserved claims
+        for k, v in additional_claims.items():
+            if k not in {"exp", "sub", "iat", "jti"}:
+                to_encode[k] = v
+
     encoded_jwt = jwt.encode(
         to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM
     )
     return encoded_jwt
 
 
-def create_refresh_token(subject: str, expires_delta: Optional[timedelta] = None) -> str:
+def create_refresh_token(
+    *,
+    subject: str,
+    expires_delta: Optional[timedelta] = None,
+    additional_claims: Optional[Dict[str, Any]] = None,
+) -> str:
     """
     Create a JWT refresh token.
-    
+
     Args:
         subject: Subject (usually user ID) to encode in token
         expires_delta: Token expiration time delta
-        
+        additional_claims: Additional claims to include in the token
+
     Returns:
         str: Encoded JWT refresh token
     """
@@ -78,6 +97,12 @@ def create_refresh_token(subject: str, expires_delta: Optional[timedelta] = None
         "iat": datetime.utcnow(),  # Issued at
         "jti": secrets.token_urlsafe(8),  # Unique token identifier
     }
+
+    if additional_claims:
+        for k, v in additional_claims.items():
+            if k not in {"exp", "sub", "iat", "jti", "type"}:
+                to_encode[k] = v
+
     encoded_jwt = jwt.encode(
         to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM
     )

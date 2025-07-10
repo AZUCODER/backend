@@ -24,7 +24,7 @@ class Session(BaseModel, table=True):
     __tablename__: str = "sessions"
 
     # User relationship
-    user_id: int = Field(foreign_key="users.id", nullable=False, index=True)
+    user_id: str = Field(foreign_key="users.id", nullable=False, index=True)
 
     # Token information
     refresh_token: str = Field(unique=True, nullable=False, index=True)
@@ -70,8 +70,8 @@ class BlacklistedToken(BaseModel, table=True):
     token_type: str = Field(nullable=False, max_length=20)  # 'access' or 'refresh'
 
     # User and session relationship
-    user_id: int = Field(foreign_key="users.id", nullable=False, index=True)
-    session_id: Optional[int] = Field(foreign_key="sessions.id", default=None)
+    user_id: str = Field(foreign_key="users.id", nullable=False, index=True)
+    session_id: Optional[str] = Field(foreign_key="sessions.id", default=None)
 
     # Token metadata
     expires_at: datetime = Field(nullable=False, index=True)
@@ -86,8 +86,8 @@ class BlacklistedToken(BaseModel, table=True):
 class SessionResponse(SQLModel):
     """Session response schema."""
 
-    id: int
-    user_id: int
+    id: str
+    user_id: str
     user_agent: Optional[str] = None
     ip_address: Optional[str] = None
     device_info: Optional[str] = None

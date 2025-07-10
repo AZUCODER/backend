@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.config import get_settings
+from app.middleware import RateLimitMiddleware, SecurityMiddleware
 
 settings = get_settings()
 
@@ -23,8 +24,17 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS middleware
-cors_origins = settings.get_cors_origins() or ["*"]  # Default to all origins in dev
+# Add security middleware first (before CORS)
+app.add_middleware(SecurityMiddleware)
+
+# Add rate limiting middleware
+app.add_middleware(RateLimitMiddleware, requests_per_minute=settings.RATE_LIMIT_PER_MINUTE)
+
+# When credentials are allowed, '*' is invalid. If no CORS origins are set, fallback to the
+# configured FRONTEND_BASE_URL so that Axios requests with cookies/Authorization succeed during dev.
+cors_origins = settings.get_cors_origins()
+if not cors_origins or cors_origins == ["*"]:
+    cors_origins = [settings.FRONTEND_BASE_URL.rstrip("/")]
 
 app.add_middleware(
     CORSMiddleware,

@@ -6,6 +6,7 @@ and transaction handling for the FastAPI application.
 """
 
 from .connection import DatabaseManager, db_manager, get_db
+from .connection import async_engine
 
 
 # Import get_session from the main database module for backward compatibility

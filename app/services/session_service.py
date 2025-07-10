@@ -1,25 +1,19 @@
 """
-Session service for JWT token and session management.
+Session service for managing user sessions.
 
-This module contains business logic for managing user sessions,
-JWT tokens, and token blacklisting for security.
+This module provides session management functionality including
+session creation, validation, and cleanup using Redis for storage.
 """
 
-import secrets
 from datetime import datetime, timedelta
-from typing import Optional
-
+from typing import Optional, List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import desc
 from sqlmodel import select
 
-from app.core.security import (
-    create_access_token,
-    create_refresh_token,
-    decode_access_token,
-)
-from app.models.session import Session, BlacklistedToken, SessionCreate
-from app.models.audit import AuditLog, AuditEventType
+from app.models.session import Session, SessionCreate
+from app.models.user import User
+from app.core.security import create_access_token, create_refresh_token
+from app.services.redis_service import redis_service
 from app.config import get_settings
 
 settings = get_settings()
@@ -27,79 +21,92 @@ settings = get_settings()
 
 async def create_user_session(
     db: AsyncSession,
-    user_id: int,
-    session_data: SessionCreate,
+    user: User,
     ip_address: Optional[str] = None,
-) -> dict:
+    user_agent: Optional[str] = None,
+) -> Dict[str, Any]:
     """
-    Create a new user session with access and refresh tokens.
+    Create a new user session with Redis caching.
 
     Args:
         db: Database session
-        user_id: User ID
-        session_data: Session creation data
+        user: User object
         ip_address: Client IP address
+        user_agent: Client user agent
 
     Returns:
-        Dict with access_token, refresh_token, and session info
+        Dictionary containing access_token and refresh_token
     """
-    # Generate tokens
-    access_token = create_access_token(subject=str(user_id))
-    refresh_token = create_refresh_token(subject=str(user_id))
+    # Create tokens
+    access_token = create_access_token(subject=str(user.id))
+    refresh_token = create_refresh_token(subject=str(user.id))
 
-    # Generate session JTI (unique identifier)
-    access_token_jti = secrets.token_urlsafe(32)
-
-    # Create session record
+    # Create session record in database
     session = Session(
-        user_id=user_id,
+        user_id=str(user.id),
         refresh_token=refresh_token,
-        access_token_jti=access_token_jti,
-        user_agent=session_data.user_agent,
-        ip_address=ip_address or session_data.ip_address,
-        device_info=session_data.device_info,
-        expires_at=datetime.utcnow()
-        + timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES),
-        is_active=True,
-        is_revoked=False,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        expires_at=datetime.utcnow() + timedelta(days=7),  # 7 days
     )
 
     db.add(session)
     await db.commit()
+    # Refresh to get session ID
     await db.refresh(session)
+
+    # Store session data in Redis for faster access
+    session_data = {
+        "session_id": str(session.id),  # Convert UUID to string
+        "user_id": str(user.id),  # Convert UUID to string
+        "refresh_token": refresh_token,
+        "ip_address": ip_address,
+        "user_agent": user_agent,
+        "created_at": session.created_at.isoformat(),
+        "expires_at": session.expires_at.isoformat(),
+        "is_active": session.is_active,
+    }
+
+    # Cache session for 7 days (same as database)
+    redis_service.set_user_session(
+        str(user.id), session_data, expire=7 * 24 * 3600  # 7 days in seconds
+    )
 
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
         "token_type": "bearer",
         "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        "session_id": session.id,
+        "session_id": str(session.id),  # Convert UUID to string
     }
 
 
 async def refresh_access_token(
-    db: AsyncSession,
-    refresh_token: str,
-    ip_address: Optional[str] = None,
-    user_agent: Optional[str] = None,
-) -> Optional[dict]:
+    db: AsyncSession, refresh_token: str
+) -> Optional[Dict[str, str]]:
     """
-    Refresh access token using refresh token.
+    Refresh access token using Redis cache.
 
     Args:
         db: Database session
         refresh_token: Refresh token
-        ip_address: Client IP address
-        user_agent: Client user agent
 
     Returns:
-        Dict with new tokens if successful, None otherwise
+        Dictionary containing new access_token and refresh_token, or None if invalid
     """
-    # Find session by refresh token
+    # Try to get session from Redis first
+    session_data = None
+    user_id = None
+
+    # Find user_id from refresh token (you might need to decode the token)
+    # For now, we'll check all user sessions in Redis
+    # In a real implementation, you'd decode the token to get user_id
+
+    # Fallback to database lookup
     statement = select(Session).where(
         Session.refresh_token == refresh_token,
         Session.is_active == True,
-        Session.is_revoked == False,
+        Session.expires_at > datetime.utcnow(),
     )
     result = await db.execute(statement)
     session = result.scalars().first()
@@ -107,48 +114,54 @@ async def refresh_access_token(
     if not session:
         return None
 
-    # Check if session is expired
-    if session.expires_at < datetime.utcnow():
-        # Mark session as revoked
-        session.is_revoked = True
-        session.revoked_at = datetime.utcnow()
-        session.revoked_reason = "Session expired"
-        await db.commit()
+    user_id = session.user_id
+
+    # Get user data
+    statement = select(User).where(User.id == user_id)
+    result = await db.execute(statement)
+    user = result.scalars().first()
+
+    if not user or not user.is_active:
         return None
 
-    # Generate new tokens
-    access_token = create_access_token(subject=str(session.user_id))
-    new_refresh_token = create_refresh_token(subject=str(session.user_id))
+    # Create new tokens
+    new_access_token = create_access_token(subject=str(user.id))
+    new_refresh_token = create_refresh_token(subject=str(user.id))
 
-    # Update session
+    # Update session in database
     session.refresh_token = new_refresh_token
-    session.access_token_jti = secrets.token_urlsafe(32)
-    session.last_used_at = datetime.utcnow()
     session.updated_at = datetime.utcnow()
-
-    # Update IP and user agent if provided
-    if ip_address:
-        session.ip_address = ip_address
-    if user_agent:
-        session.user_agent = user_agent
-
     await db.commit()
-    await db.refresh(session)
+
+    # Update Redis cache
+    session_data = {
+        "session_id": str(session.id),  # Convert UUID to string
+        "user_id": str(user.id),  # Convert UUID to string
+        "refresh_token": new_refresh_token,
+        "ip_address": session.ip_address,
+        "user_agent": session.user_agent,
+        "created_at": session.created_at.isoformat(),
+        "expires_at": session.expires_at.isoformat(),
+        "is_active": session.is_active,
+    }
+
+    redis_service.set_user_session(str(user.id), session_data, expire=7 * 24 * 3600)
 
     return {
-        "access_token": access_token,
+        "access_token": new_access_token,
         "refresh_token": new_refresh_token,
         "token_type": "bearer",
         "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        "session_id": session.id,
+        "session_id": str(session.id),  # Convert UUID to string
     }
 
 
 async def revoke_session(
     db: AsyncSession,
-    session_id: int,
-    user_id: int,
-    reason: str = "User logout",
+    *,
+    user_id: str,
+    session_id: Optional[str] = None,
+    reason: Optional[str] = None,
     ip_address: Optional[str] = None,
     user_agent: Optional[str] = None,
 ) -> bool:
@@ -157,223 +170,131 @@ async def revoke_session(
 
     Args:
         db: Database session
-        session_id: Session ID to revoke
-        user_id: User ID (for security check)
-        reason: Reason for revocation
-        ip_address: Client IP address
-        user_agent: Client user agent
+        user_id: User ID
+        session_id: Specific session ID to revoke (optional)
 
     Returns:
         True if session was revoked, False otherwise
     """
-    # Find session
-    statement = select(Session).where(
-        Session.id == session_id, Session.user_id == user_id, Session.is_active == True
-    )
-    result = await db.execute(statement)
-    session = result.scalars().first()
+    if session_id:
+        # Revoke specific session
+        statement = select(Session).where(
+            Session.id == session_id, Session.user_id == user_id
+        )
+        result = await db.execute(statement)
+        session = result.scalars().first()
 
-    if not session:
-        return False
+        if session:
+            session.is_active = False
+            await db.commit()
+            # Optionally log reason or audit here in future
 
-    # Revoke session
-    session.is_revoked = True
-    session.revoked_at = datetime.utcnow()
-    session.revoked_reason = reason
+            # Remove from Redis cache
+            redis_service.delete_user_session(str(user_id))
+            return True
+    else:
+        # Revoke all user sessions
+        statement = select(Session).where(
+            Session.user_id == user_id, Session.is_active == True
+        )
+        result = await db.execute(statement)
+        sessions = result.scalars().all()
 
-    # Create audit log
-    audit_log = AuditLog.create_log(
-        event_type=AuditEventType.LOGOUT,
-        event_description=f"Session revoked: {reason}",
-        user_id=user_id,
-        session_id=session_id,
-        ip_address=ip_address,
-        user_agent=user_agent,
-        success=True,
-    )
-    db.add(audit_log)
+        for session in sessions:
+            session.is_active = False
 
-    await db.commit()
-    return True
+        await db.commit()
+
+        # Remove from Redis cache
+        redis_service.delete_user_session(str(user_id))
+        return len(sessions) > 0
+
+    return False
 
 
 async def revoke_all_user_sessions(
     db: AsyncSession,
-    user_id: int,
-    reason: str = "Security logout",
-    except_session_id: Optional[int] = None,
-) -> int:
+    user_id: str,
+    reason: Optional[str] = None,
+) -> bool:
     """
-    Revoke all active sessions for a user.
+    Revoke all sessions for a user.
 
     Args:
         db: Database session
         user_id: User ID
-        reason: Reason for revocation
-        except_session_id: Session ID to exclude from revocation
 
     Returns:
-        Number of sessions revoked
+        True if sessions were revoked, False otherwise
     """
-    # Find all active sessions for user
+    return await revoke_session(db, user_id=user_id, reason=reason)
+
+
+async def get_user_sessions(db: AsyncSession, user_id: str) -> List[Dict[str, Any]]:
+    """
+    Get all active sessions for a user.
+
+    Args:
+        db: Database session
+        user_id: User ID
+
+    Returns:
+        List of session information dictionaries
+    """
+    # Try to get from Redis first
+    session_data = redis_service.get_user_session(str(user_id))
+    if session_data:
+        return [session_data]
+
+    # Fallback to database
     statement = select(Session).where(
         Session.user_id == user_id,
         Session.is_active == True,
-        Session.is_revoked == False,
+        Session.expires_at > datetime.utcnow(),
     )
-
-    if except_session_id:
-        statement = statement.where(Session.id != except_session_id)
-
     result = await db.execute(statement)
     sessions = result.scalars().all()
 
-    # Revoke all sessions
-    revoked_count = 0
+    session_list = []
     for session in sessions:
-        session.is_revoked = True
-        session.revoked_at = datetime.utcnow()
-        session.revoked_reason = reason
-        revoked_count += 1
+        session_info = {
+            "session_id": session.id,
+            "user_id": session.user_id,
+            "ip_address": session.ip_address,
+            "user_agent": session.user_agent,
+            "created_at": session.created_at.isoformat(),
+            "expires_at": session.expires_at.isoformat(),
+            "is_active": session.is_active,
+        }
+        session_list.append(session_info)
 
-    if revoked_count > 0:
-        # Create audit log
-        audit_log = AuditLog.create_log(
-            event_type=AuditEventType.LOGOUT,
-            event_description=f"All sessions revoked: {reason} ({revoked_count} sessions)",
-            user_id=user_id,
-            success=True,
-        )
-        db.add(audit_log)
-
-        await db.commit()
-
-    return revoked_count
-
-
-async def blacklist_token(
-    db: AsyncSession,
-    jti: str,
-    token_type: str,
-    user_id: int,
-    expires_at: datetime,
-    session_id: Optional[int] = None,
-    reason: str = "Token revoked",
-) -> BlacklistedToken:
-    """
-    Add token to blacklist.
-
-    Args:
-        db: Database session
-        jti: JWT ID
-        token_type: Type of token ('access' or 'refresh')
-        user_id: User ID
-        expires_at: Token expiration time
-        session_id: Associated session ID
-        reason: Reason for blacklisting
-
-    Returns:
-        BlacklistedToken object
-    """
-    blacklisted_token = BlacklistedToken(
-        jti=jti,
-        token_type=token_type,
-        user_id=user_id,
-        session_id=session_id,
-        expires_at=expires_at,
-        revoked_reason=reason,
-    )
-
-    db.add(blacklisted_token)
-    await db.commit()
-    await db.refresh(blacklisted_token)
-
-    return blacklisted_token
-
-
-async def is_token_blacklisted(db: AsyncSession, jti: str) -> bool:
-    """
-    Check if token is blacklisted.
-
-    Args:
-        db: Database session
-        jti: JWT ID to check
-
-    Returns:
-        True if token is blacklisted, False otherwise
-    """
-    statement = select(BlacklistedToken).where(
-        BlacklistedToken.jti == jti, BlacklistedToken.expires_at > datetime.utcnow()
-    )
-    result = await db.execute(statement)
-    return result.scalars().first() is not None
-
-
-async def get_user_sessions(
-    db: AsyncSession, user_id: int, active_only: bool = True
-) -> list[Session]:
-    """
-    Get all sessions for a user.
-
-    Args:
-        db: Database session
-        user_id: User ID
-        active_only: Only return active sessions
-
-    Returns:
-        List of Session objects
-    """
-    statement = select(Session).where(Session.user_id == user_id)
-
-    if active_only:
-        statement = statement.where(
-            Session.is_active == True, Session.is_revoked == False
-        )
-
-    statement = statement.order_by(Session.last_used_at.desc())  # type: ignore
-    result = await db.execute(statement)
-    return list(result.scalars().all())
+    return session_list
 
 
 async def cleanup_expired_sessions(db: AsyncSession) -> int:
     """
-    Clean up expired sessions and blacklisted tokens.
+    Clean up expired sessions from database and Redis.
 
     Args:
         db: Database session
 
     Returns:
-        Number of items cleaned up
+        Number of sessions cleaned up
     """
-    now = datetime.utcnow()
-
-    # Find expired sessions
-    expired_sessions_statement = select(Session).where(
-        Session.expires_at < now, Session.is_revoked == False
+    # Clean up database
+    statement = select(Session).where(
+        Session.expires_at < datetime.utcnow(), Session.is_active == True
     )
-    expired_sessions_result = await db.execute(expired_sessions_statement)
-    expired_sessions = expired_sessions_result.scalars().all()
+    result = await db.execute(statement)
+    expired_sessions = result.scalars().all()
 
-    # Mark expired sessions as revoked
     for session in expired_sessions:
-        session.is_revoked = True
-        session.revoked_at = now
-        session.revoked_reason = "Expired"
+        session.is_active = False
 
-    # Find expired blacklisted tokens
-    expired_tokens_statement = select(BlacklistedToken).where(
-        BlacklistedToken.expires_at < now
-    )
-    expired_tokens_result = await db.execute(expired_tokens_statement)
-    expired_tokens = expired_tokens_result.scalars().all()
+    await db.commit()
 
-    # Delete expired blacklisted tokens
-    for token in expired_tokens:
-        await db.delete(token)
+    # Clean up Redis (this will happen automatically with TTL)
+    # But we can also manually clean up user sessions
+    # Note: In a production environment, you'd want a more sophisticated cleanup
 
-    cleanup_count = len(expired_sessions) + len(expired_tokens)
-
-    if cleanup_count > 0:
-        await db.commit()
-
-    return cleanup_count
+    return len(expired_sessions)

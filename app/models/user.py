@@ -8,8 +8,10 @@ including authentication credentials and profile data.
 from datetime import datetime
 from typing import Optional
 from enum import Enum
+import uuid
 
 from sqlmodel import Field, SQLModel, Relationship
+from sqlalchemy import UniqueConstraint
 
 from app.models.base import BaseModel
 
@@ -34,7 +36,8 @@ class User(BaseModel, table=True):
     # Authentication fields
     email: str = Field(unique=True, index=True, nullable=False, max_length=255)
     username: str = Field(unique=True, index=True, nullable=False, max_length=50)
-    hashed_password: str = Field(nullable=False)
+    # Password is required for traditional accounts but can be null for social accounts
+    hashed_password: str | None = Field(default=None, nullable=True)
 
     # Profile fields
     first_name: Optional[str] = Field(default=None, max_length=100)
@@ -62,9 +65,22 @@ class User(BaseModel, table=True):
     # Email verification
     email_verified_at: Optional[datetime] = Field(default=None)
 
+    # OAuth-specific fields
+    oauth_provider: str | None = Field(default=None, max_length=20, nullable=True)
+    oauth_sub: str | None = Field(default=None, max_length=255, nullable=True)
+    avatar_url: str | None = Field(default=None, max_length=500, nullable=True)
+
+    # Composite unique constraint on provider + sub ensures each social account is unique
+    __table_args__ = (
+        UniqueConstraint("oauth_provider", "oauth_sub", name="uq_user_oauth"),
+    )
+
     def __repr__(self) -> str:
         """String representation of User."""
-        return f"<User(id={self.id}, username='{self.username}', email='{self.email}', role='{self.role}')>"
+        return (
+            f"<User(id={self.id}, username='{self.username}', email='{self.email}', "
+            f"role='{self.role}', provider='{self.oauth_provider}')>"
+        )
 
 
 # Pydantic models for API requests/responses
@@ -103,7 +119,7 @@ class UserUpdate(SQLModel):
 class UserResponse(UserBase):
     """User response schema."""
 
-    id: int
+    id: str
     is_active: bool
     is_superuser: bool
     is_verified: bool
@@ -116,8 +132,10 @@ class UserResponse(UserBase):
 
 class PasswordResetToken(SQLModel, table=True):
     __tablename__: str = "password_reset_tokens"
-    id: int = Field(default=None, primary_key=True)
-    user_id: int = Field(foreign_key="users.id", nullable=False, index=True)
+    id: Optional[str] = Field(
+        default_factory=lambda: str(uuid.uuid4()), primary_key=True
+    )
+    user_id: str = Field(foreign_key="users.id", nullable=False, index=True)
     token_hash: str = Field(unique=True, nullable=False, max_length=128, index=True)
     issued_at: datetime = Field(nullable=False)
     expires_at: datetime = Field(nullable=False)

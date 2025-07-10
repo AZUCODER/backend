@@ -111,7 +111,7 @@ class EnhancedUserService:
         audit_log = AuditLog.create_log(
             event_type=AuditEventType.USER_CREATED,
             event_description=f"User registered successfully: {user.username}",
-            user_id=user.id,
+            user_id=str(user.id),
             username=user.username,
             ip_address=ip_address,
             user_agent=user_agent,
@@ -169,7 +169,7 @@ class EnhancedUserService:
                 audit_log = AuditLog.create_log(
                     event_type=AuditEventType.UNAUTHORIZED_ACCESS_ATTEMPT,
                     event_description=f"Login attempt on locked account: {user.username}",
-                    user_id=user.id,
+                    user_id=str(user.id),
                     username=user.username,
                     ip_address=ip_address,
                     user_agent=user_agent,
@@ -190,7 +190,7 @@ class EnhancedUserService:
                 audit_log = AuditLog.create_log(
                     event_type=AuditEventType.UNAUTHORIZED_ACCESS_ATTEMPT,
                     event_description=f"Login attempt on inactive account: {user.username}",
-                    user_id=user.id,
+                    user_id=str(user.id),
                     username=user.username,
                     ip_address=ip_address,
                     user_agent=user_agent,
@@ -204,7 +204,7 @@ class EnhancedUserService:
                 audit_log = AuditLog.create_log(
                     event_type=AuditEventType.UNAUTHORIZED_ACCESS_ATTEMPT,
                     event_description=f"Login attempt with unverified email: {user.username}",
-                    user_id=user.id,
+                    user_id=str(user.id),
                     username=user.username,
                     ip_address=ip_address,
                     user_agent=user_agent,
@@ -223,7 +223,7 @@ class EnhancedUserService:
             audit_log = AuditLog.create_log(
                 event_type=AuditEventType.LOGIN_SUCCESS,
                 event_description=f"Successful login for user: {user.username}",
-                user_id=user.id,
+                user_id=str(user.id),
                 username=user.username,
                 ip_address=ip_address,
                 user_agent=user_agent,
@@ -268,7 +268,7 @@ class EnhancedUserService:
         audit_log = AuditLog.create_log(
             event_type=AuditEventType.LOGIN_FAILED,
             event_description=f"Failed login attempt for user: {user.username}",
-            user_id=user.id,
+            user_id=str(user.id),
             username=user.username,
             ip_address=ip_address,
             user_agent=user_agent,
@@ -304,7 +304,7 @@ class EnhancedUserService:
             logger.error(f"Failed to send lockout email: {e}")
 
     @track_query_performance
-    async def get_user_by_id(self, user_id: int) -> Optional[User]:
+    async def get_user_by_id(self, user_id: str) -> Optional[User]:
         """Get user by ID with performance monitoring"""
         return await self.user_repo.get(user_id)
 
@@ -324,9 +324,9 @@ class EnhancedUserService:
     @transactional(max_retries=2)
     async def update_user(
         self,
-        user_id: int,
+        user_id: str,
         user_update: UserUpdate,
-        current_user_id: Optional[int] = None,
+        current_user_id: Optional[str] = None,
     ) -> Optional[User]:
         """
         Update user with validation and audit logging.
@@ -401,7 +401,7 @@ class EnhancedUserService:
     @track_query_performance
     @transactional(max_retries=2)
     async def deactivate_user(
-        self, user_id: int, current_user_id: int, reason: str = "User deactivated"
+        self, user_id: str, current_user_id: str, reason: str = "User deactivated"
     ) -> bool:
         """
         Deactivate user account with audit logging.

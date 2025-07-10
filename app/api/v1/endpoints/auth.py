@@ -17,6 +17,7 @@ from app.dependencies import (
     get_user_agent,
     require_role,
     require_verified_user,
+    require_verified_user_debug_aware,
 )
 from app.models.user import User, UserCreate, UserRole
 from app.models.session import SessionCreate
@@ -160,7 +161,7 @@ async def register(
         audit_log = AuditLog.create_log(
             event_type=AuditEventType.USER_CREATED,
             event_description=f"User registered successfully: {user.username}",
-            user_id=user.id,
+            user_id=str(user.id),
             username=user.username,
             ip_address=ip_address,
             user_agent=user_agent,
@@ -173,7 +174,7 @@ async def register(
             message="User registered successfully. Please check your email to verify your account.",
             success=True,
             data={
-                "user_id": user.id,
+                "user_id": str(user.id),
                 "username": user.username,
                 "email": user.email,
                 "is_verified": user.is_verified,
@@ -249,7 +250,7 @@ async def login(
         )
 
     token_data = await create_user_session(
-        db=db, user_id=user.id, session_data=session_data, ip_address=ip_address
+        db=db, user=user, ip_address=ip_address, user_agent=user_agent
     )
 
     return TokenResponse(**token_data)
@@ -281,8 +282,6 @@ async def refresh_token(
     token_data = await refresh_access_token(
         db=db,
         refresh_token=refresh_data.refresh_token,
-        ip_address=ip_address,
-        user_agent=user_agent,
     )
 
     if not token_data:
@@ -327,10 +326,10 @@ async def logout(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="User ID is required for logout",
             )
-            
+
         revoked_count = await revoke_all_user_sessions(
             db=db,
-            user_id=current_user.id,
+            user_id=str(current_user.id),
             reason="User requested logout from all devices",
         )
 
@@ -353,18 +352,16 @@ async def logout(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="User ID is required for logout",
                 )
-            
-            user_sessions = await get_user_sessions(
-                db, current_user.id, active_only=True
-            )
+
+            user_sessions = await get_user_sessions(db, current_user.id)
             if user_sessions:
                 session_id = user_sessions[0].id
 
         if session_id:
             success = await revoke_session(
                 db=db,
+                user_id=str(current_user.id),
                 session_id=session_id,
-                user_id=current_user.id,  # type: ignore
                 reason="User logout",
                 ip_address=ip_address,
                 user_agent=user_agent,
@@ -387,7 +384,7 @@ async def logout(
     description="Get authenticated user's profile information",
 )
 async def get_current_user_profile(
-    current_user: User = Depends(require_verified_user),
+    current_user: User = Depends(require_verified_user_debug_aware),
 ) -> Any:
     """
     Get current user profile.
@@ -395,7 +392,7 @@ async def get_current_user_profile(
     Returns the authenticated user's profile information.
     """
     return UserProfileResponse(
-        id=current_user.id if current_user.id is not None else 0,
+        id=str(current_user.id) if current_user.id is not None else "0",
         email=current_user.email,
         username=current_user.username,
         first_name=current_user.first_name,
@@ -404,7 +401,7 @@ async def get_current_user_profile(
         is_active=current_user.is_active,
         is_superuser=current_user.is_superuser,
         is_verified=current_user.is_verified,
-        role=current_user.role.value,
+        role=current_user.role,
         created_at=current_user.created_at.isoformat(),
         last_login=(
             current_user.last_login.isoformat() if current_user.last_login else None
@@ -421,84 +418,57 @@ async def get_current_user_profile(
     "/sessions",
     response_model=UserSessionsResponse,
     summary="Get user sessions",
-    description="Get all active sessions for the authenticated user",
+    description="Get all active sessions for the authenticated user (user or admin only)",
 )
 async def get_user_sessions_endpoint(
     current_user: User = Depends(require_role(UserRole.USER, UserRole.ADMIN)),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
-    """
-    Get user sessions.
-
-    Returns all active sessions for the authenticated user.
-    Only accessible to users with role USER or ADMIN.
-    """
-    if current_user.id is None:
-        raise HTTPException(status_code=400, detail="User ID is required")
-    user_sessions = await get_user_sessions(db, current_user.id, active_only=True)
-    sessions_info = []
-    for session in user_sessions:
-        session_info = SessionInfo(
-            id=session.id if session.id is not None else 0,
-            device_info=session.device_info,
-            ip_address=session.ip_address,
-            user_agent=session.user_agent,
-            created_at=session.created_at.isoformat(),
-            last_used_at=session.last_used_at.isoformat(),
-            expires_at=session.expires_at.isoformat(),
-            is_current=False,  # We'd need token info to determine current session
-        )
-        sessions_info.append(session_info)
-    return UserSessionsResponse(
-        sessions=sessions_info,
-        total_sessions=len(sessions_info),
-        active_sessions=len(
-            [s for s in user_sessions if s.is_active and not s.is_revoked]
-        ),
-    )
+    # Guests are not allowed to access session management
+    return await get_user_sessions(db, str(current_user.id))
 
 
 @router.delete(
     "/sessions/{session_id}",
     response_model=AuthResponse,
     summary="Revoke specific session",
-    description="Revoke a specific session by ID",
+    description="Revoke a specific session by ID (user or admin only)",
 )
 async def revoke_session_endpoint(
-    session_id: int,
+    session_id: str,
     request: Request,
     current_user: User = Depends(require_role(UserRole.USER, UserRole.ADMIN)),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
-    """
-    Revoke specific session.
-
-    - **session_id**: ID of the session to revoke
-
-    Revokes the specified session for the authenticated user.
-    Only accessible to users with role USER or ADMIN.
-    """
-    # Get client information
-    ip_address = get_client_ip(request)
-    user_agent = get_user_agent(request)
-    success = await revoke_session(
+    # Guests are not allowed to revoke sessions
+    return await revoke_session(
         db=db,
+        user_id=str(current_user.id),
         session_id=session_id,
-        user_id=current_user.id if current_user.id is not None else 0,
-        reason="Session revoked by user",
-        ip_address=ip_address,
-        user_agent=user_agent,
+        reason="User revoked specific session",
+        ip_address=get_client_ip(request),
+        user_agent=get_user_agent(request),
     )
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Session not found or already revoked",
-        )
-    return AuthResponse(
-        message="Session revoked successfully",
-        success=True,
-        data={"session_id": session_id},
+
+
+@router.post(
+    "/logout-everywhere",
+    response_model=AuthResponse,
+    summary="Log out everywhere",
+    description="Log out from all devices (user or admin only)",
+)
+async def logout_everywhere_endpoint(
+    request: Request,
+    current_user: User = Depends(require_role(UserRole.USER, UserRole.ADMIN)),
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    # Guests are not allowed to log out everywhere
+    await revoke_all_user_sessions(
+        db=db,
+        user_id=str(current_user.id),
+        reason="User logout everywhere",
     )
+    return AuthResponse(message="Logged out everywhere", success=True)
 
 
 @router.post(
@@ -636,7 +606,7 @@ async def reset_password(
     audit_log = AuditLog.create_log(
         event_type=AuditEventType.PASSWORD_RESET_COMPLETED,
         event_description=f"Password reset completed for user: {username}",
-        user_id=user_id,
+        user_id=str(user_id),
         username=username,
         ip_address=ip_address,
         user_agent=user_agent,
@@ -674,12 +644,35 @@ async def verify_email(
         )
 
     user_id, username = result
+    # Fetch user object directly from DB to ensure it is attached to the session
+    from sqlmodel import select  # lazy import to avoid circular
+    from app.models.user import User
+
+    stmt = select(User).where(User.id == user_id)
+    res = await db.execute(stmt)
+    user = res.scalars().first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
+
     # Mark the user as verified
-    user = await get_user_by_id(db, user_id)
-    if user:
+    if not user.is_verified:
         user.is_verified = True
         user.email_verified_at = datetime.utcnow()
         await db.commit()
+
+        # Invalidate cached user data so the updated verification status is used
+        try:
+            from app.services.user_service import _invalidate_user_cache  # noqa: WPS433
+
+            _invalidate_user_cache(user)
+        except Exception as cache_exc:  # pragma: no cover
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "Failed to invalidate user cache after verification: %s", cache_exc
+            )
 
     return AuthResponse(
         message="Email verified successfully. You can now log in.",

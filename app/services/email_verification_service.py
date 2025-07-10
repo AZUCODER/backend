@@ -38,7 +38,7 @@ def _hash_token(token: str) -> str:
 
 async def create_verification_token(
     db: AsyncSession,
-    user_id: int,
+    user_id: str,
     username: str,
     expires_in_hours: int = 48,
 ) -> str:
@@ -69,7 +69,7 @@ async def create_verification_token(
         AuditLog.create_log(
             event_type=AuditEventType.EMAIL_VERIFICATION_CREATED,
             event_description=f"Verification token created for user: {username}",
-            user_id=user_id,
+            user_id=str(user_id),
             username=username,
             success=True,
         )
@@ -81,7 +81,7 @@ async def create_verification_token(
 
 async def validate_verification_token(
     db: AsyncSession, token: str
-) -> Optional[tuple[int, str]]:
+) -> Optional[tuple[str, str]]:
     """Return (user_id, username) if token is valid and not yet consumed."""
     token_hash = _hash_token(token)
     stmt = select(EmailVerificationToken).where(
@@ -142,7 +142,7 @@ async def consume_verification_token(
     return info[0], info[1]
 
 
-async def invalidate_existing_tokens(db: AsyncSession, user_id: int) -> int:
+async def invalidate_existing_tokens(db: AsyncSession, user_id: str) -> int:
     stmt = select(EmailVerificationToken).where(
         EmailVerificationToken.user_id == user_id,
         getattr(EmailVerificationToken, "used").is_(False),

@@ -10,6 +10,8 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import auth
 from app.api.v1.endpoints import users
 from app.api.v1.endpoints import health
+from app.api.v1.endpoints import oauth
+from app.api.v1.endpoints import cache
 
 api_router = APIRouter()
 
@@ -17,6 +19,8 @@ api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["authentication"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(health.router, prefix="", tags=["health", "monitoring"])
+api_router.include_router(oauth.router, prefix="", tags=["oauth"])
+api_router.include_router(cache.router, prefix="", tags=["cache"])
 
 
 # Placeholder endpoints for now

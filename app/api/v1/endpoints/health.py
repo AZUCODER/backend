@@ -24,6 +24,7 @@ from app.database.monitoring import (
     db_monitor,
     reset_monitoring,
 )
+from app.services.redis_service import redis_service
 
 router = APIRouter()
 
@@ -36,11 +37,17 @@ async def health_check():
     Returns:
         Dict: Basic health status
     """
+    redis_connected = redis_service.is_connected()
+
     return {
         "status": "healthy",
         "service": "FastAPI Backend",
         "version": "1.0.0",
         "timestamp": "2024-01-01T00:00:00Z",
+        "redis": {
+            "connected": redis_connected,
+            "status": "healthy" if redis_connected else "unavailable",
+        },
     }
 
 
@@ -173,7 +180,18 @@ async def readiness_check(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not ready"
         )
 
-    return {"ready": True, "checks": {"database": db_health}}
+    redis_connected = redis_service.is_connected()
+    
+    return {
+        "ready": True, 
+        "checks": {
+            "database": db_health,
+            "redis": {
+                "connected": redis_connected,
+                "status": "healthy" if redis_connected else "degraded"
+            }
+        }
+    }
 
 
 @router.get("/health/liveness", response_model=Dict[str, Any])
@@ -185,6 +203,26 @@ async def liveness_check():
         Dict: Liveness status
     """
     return {"alive": True, "timestamp": "2024-01-01T00:00:00Z"}
+
+
+@router.get("/health/redis", response_model=Dict[str, Any])
+async def redis_health_check():
+    """
+    Redis health check endpoint.
+
+    Returns:
+        Dict: Redis health status
+    """
+    is_connected = redis_service.is_connected()
+
+    return {
+        "redis": {
+            "connected": is_connected,
+            "status": "healthy" if is_connected else "unavailable",
+            "url": redis_service.redis_url,
+        },
+        "status": "healthy" if is_connected else "degraded",
+    }
 
 
 @router.get("/status", response_model=Dict[str, Any])

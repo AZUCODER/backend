@@ -1,0 +1,18 @@
+{
+  "name": "Audit Log Creation",
+  "description": "Create audit log entry with proper event tracking",
+  "prefix": "auditlog",
+  "body": [
+    "audit_log = AuditLog.create_log(",
+    "    event_type=AuditEventType.${1:EVENT_TYPE},",
+    "    event_description=f\"${2:Event description}\",",
+    "    user_id=${3:user_id},",
+    "    username=${4:username},",
+    "    ip_address=${5:ip_address},",
+    "    user_agent=${6:user_agent},",
+    "    success=${7:True},",
+    "    error_message=${8:None},",
+    ")"
+  ],
+  "scope": "python"
+} 

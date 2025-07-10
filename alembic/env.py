@@ -7,20 +7,27 @@ This module configures Alembic to work with SQLModel and our database models.
 import logging
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
+from sqlalchemy import engine_from_config, create_engine, text
 from sqlalchemy import pool
+from sqlalchemy.exc import OperationalError
+from urllib.parse import urlparse
 
 from alembic import context
+import os
+import sys
+
+# Add app to sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 # Import your SQLModel metadata
 from sqlmodel import SQLModel
 
 # Import * to ensure **all** models are registered regardless of future
 # additions – __all__ is defined in app.models.__init__
-from app import models  # noqa: F401  (imports side-effects)
+from app.models import *
 from app.config import get_settings
 
-# This is the Alembic Config object, which provides
+# this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
 
@@ -29,25 +36,18 @@ config = context.config
 # never need to hard-code credentials inside `alembic.ini`.
 # ---------------------------------------------------------------------------
 
+# Interpret the config file for Python logging.
+# This line sets up loggers basically.
+if config.config_file_name:  # Check if config file name exists
+    fileConfig(config.config_file_name)
+
+# Set SQLAlchemy URL from environment or config
 settings = get_settings()
-
-# Alembic requires a *sync* driver. If the main DATABASE_URL is async, attempt
-# to down-convert (e.g. asyncpg ➜ psycopg).
-database_url = settings.DATABASE_URL
-
-if "+asyncpg" in database_url:
-    database_url = database_url.replace("+asyncpg", "+psycopg")
-elif "+aiosqlite" in database_url:
-    database_url = database_url.replace("+aiosqlite", "")
-
-config.set_main_option("sqlalchemy.url", database_url)
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
 
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
-
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
 
 # Reduce Alembic's default spam in INFO level if user prefers a higher level.
 root_logger = logging.getLogger()
@@ -61,6 +61,40 @@ target_metadata = SQLModel.metadata
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
+
+
+def create_database_if_not_exists(database_url: str) -> None:
+    """Create the database if it doesn't exist."""
+    parsed_url = urlparse(database_url)
+
+    # Extract database name from URL
+    database_name = parsed_url.path.lstrip("/")
+
+    # Create URL without database name (to connect to PostgreSQL server)
+    server_url = f"{parsed_url.scheme}://{parsed_url.username}:{parsed_url.password}@{parsed_url.hostname}:{parsed_url.port}"
+
+    try:
+        # Connect to PostgreSQL server (not to specific database)
+        engine = create_engine(server_url, isolation_level="AUTOCOMMIT")
+
+        with engine.connect() as connection:
+            # Check if database exists
+            result = connection.execute(
+                text("SELECT 1 FROM pg_database WHERE datname = :database_name"),
+                {"database_name": database_name},
+            )
+
+            if not result.fetchone():
+                print(f"Creating database '{database_name}'...")
+                # Create database
+                connection.execute(text(f'CREATE DATABASE "{database_name}"'))
+                print(f"Database '{database_name}' created successfully!")
+            else:
+                print(f"Database '{database_name}' already exists.")
+
+    except Exception as e:
+        print(f"Error creating database: {e}")
+        raise
 
 
 def run_migrations_offline() -> None:
@@ -94,19 +128,19 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
+    # Create database if it doesn't exist
+    database_url = config.get_main_option("sqlalchemy.url")
+    if database_url:
+        create_database_if_not_exists(database_url)
+
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        config.get_section(config.config_ini_section) or {},
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-            compare_type=True,
-            compare_server_default=True,
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()

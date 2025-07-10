@@ -83,7 +83,7 @@ class TokenResponse(BaseModel):
     refresh_token: str = Field(..., description="JWT refresh token")
     token_type: str = Field(default="bearer", description="Token type")
     expires_in: int = Field(..., description="Access token expiration time in seconds")
-    session_id: int = Field(..., description="Session ID")
+    session_id: str = Field(..., description="Session ID")
 
 
 class RefreshTokenRequest(BaseModel):
@@ -106,7 +106,7 @@ class LogoutRequest(BaseModel):
 class UserProfileResponse(BaseModel):
     """User profile response schema."""
 
-    id: int
+    id: str = Field(..., description="User ID")
     email: str
     username: str
     first_name: Optional[str] = None
@@ -172,7 +172,7 @@ class PasswordChangeRequest(BaseModel):
 class SessionInfo(BaseModel):
     """Session information schema."""
 
-    id: int
+    id: str  # UUID string, not int
     device_info: Optional[str] = None
     ip_address: Optional[str] = None
     user_agent: Optional[str] = None

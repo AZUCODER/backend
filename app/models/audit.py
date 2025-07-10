@@ -73,8 +73,8 @@ class AuditLog(BaseModel, table=True):
     event_category: str = Field(nullable=False, max_length=50, index=True)
 
     # User and session tracking
-    user_id: Optional[int] = Field(foreign_key="users.id", default=None, index=True)
-    session_id: Optional[int] = Field(foreign_key="sessions.id", default=None)
+    user_id: Optional[str] = Field(foreign_key="users.id", default=None, index=True)
+    session_id: Optional[str] = Field(foreign_key="sessions.id", default=None)
     username: Optional[str] = Field(default=None, max_length=50, index=True)
 
     # Request metadata
@@ -108,8 +108,8 @@ class AuditLog(BaseModel, table=True):
         cls,
         event_type: AuditEventType,
         event_description: str,
-        user_id: Optional[int] = None,
-        session_id: Optional[int] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
         username: Optional[str] = None,
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
@@ -177,11 +177,11 @@ class AuditLog(BaseModel, table=True):
 class AuditLogResponse(SQLModel):
     """Audit log response schema."""
 
-    id: int
+    id: str
     event_type: AuditEventType
     event_category: str
     event_description: str
-    user_id: Optional[int] = None
+    user_id: Optional[str] = None
     username: Optional[str] = None
     ip_address: Optional[str] = None
     success: bool
@@ -195,7 +195,7 @@ class AuditLogFilter(SQLModel):
 
     event_type: Optional[AuditEventType] = None
     event_category: Optional[str] = None
-    user_id: Optional[int] = None
+    user_id: Optional[str] = None
     username: Optional[str] = None
     success: Optional[bool] = None
     start_date: Optional[datetime] = None

@@ -77,7 +77,7 @@ class Settings(BaseSettings):
     # Database
     # ---------------------------------------------------------------------
     DATABASE_URL: str = (
-        "postgresql+psycopg://postgres:postgres@localhost:5432/fastapi_db"
+        "postgresql+psycopg://postgres:postgres@localhost:5432/aixiate_db"
     )
     DATABASE_URL_ASYNC: Optional[str] = None  # Populated automatically if unset
 
@@ -116,8 +116,22 @@ class Settings(BaseSettings):
     RESEND_API_KEY: str = ""  # pragma: allowlist secret (placeholder)
     FROM_EMAIL: str = "no-reply@example.com"
 
+    # ------------------------------------------------------------------
+    # OAuth Provider Credentials
+    # ------------------------------------------------------------------
+    # Google OAuth
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+
+    # GitHub OAuth
+    GITHUB_CLIENT_ID: str = ""
+    GITHUB_CLIENT_SECRET: str = ""
+
     # Frontend Settings
     FRONTEND_BASE_URL: str = "http://localhost:3000"
+
+    # Backend Settings
+    BACKEND_BASE_URL: str = "http://localhost:8000"
 
     # Dynamically adjust lockout duration for development
     def model_post_init(self, __context__: Any) -> None:  # type: ignore[override]
@@ -135,11 +149,6 @@ class Settings(BaseSettings):
                 and "+psycopg" in self.DATABASE_URL
             ):
                 async_url = self.DATABASE_URL.replace("+psycopg", "+asyncpg")
-            elif self.DATABASE_URL.startswith("sqlite:///"):
-                async_url = self.DATABASE_URL.replace(
-                    "sqlite:///", "sqlite+aiosqlite:///"
-                )
-
             if async_url:
                 object.__setattr__(self, "DATABASE_URL_ASYNC", async_url)
 
