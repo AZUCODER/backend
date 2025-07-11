@@ -29,6 +29,7 @@ from app.schemas.auth import (
     LogoutRequest,
     TokenResponse,
     UserProfileResponse,
+    ProfileUpdate,
     AuthResponse,
     ErrorResponse,
     UserSessionsResponse,
@@ -389,10 +390,13 @@ async def get_current_user_profile(
     """
     Get current user profile.
 
-    Returns the authenticated user's profile information.
+    Returns the authenticated user's profile information including:
+    - Basic profile data (name, email, username)
+    - Account status (active, verified, role)
+    - Timestamps (created, last login, email verified)
     """
     return UserProfileResponse(
-        id=str(current_user.id) if current_user.id is not None else "0",
+        id=str(current_user.id),
         email=current_user.email,
         username=current_user.username,
         first_name=current_user.first_name,
@@ -401,8 +405,10 @@ async def get_current_user_profile(
         is_active=current_user.is_active,
         is_superuser=current_user.is_superuser,
         is_verified=current_user.is_verified,
-        role=current_user.role,
-        created_at=current_user.created_at.isoformat(),
+        role=current_user.role.value,
+        created_at=(
+            current_user.created_at.isoformat() if current_user.created_at else ""
+        ),
         last_login=(
             current_user.last_login.isoformat() if current_user.last_login else None
         ),
@@ -412,6 +418,140 @@ async def get_current_user_profile(
             else None
         ),
     )
+
+
+@router.put(
+    "/profile",
+    response_model=UserProfileResponse,
+    summary="Update own profile",
+    description="Authenticated users can update permitted profile fields.",
+)
+async def update_profile(
+    payload: ProfileUpdate,
+    request: Request,
+    current_user: User = Depends(require_verified_user_debug_aware),
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """
+    Update current user's profile.
+
+    Allows authenticated users to update their own profile fields:
+    - Email (must be unique)
+    - Username (must be unique, 3-50 chars, alphanumeric + underscores)
+    - First name, last name, full name
+
+    Returns the updated user profile.
+    """
+    # Get client information for audit logging
+    ip_address = get_client_ip(request)
+    user_agent = get_user_agent(request)
+
+    try:
+        # Check for email uniqueness if email is being updated
+        if payload.email and payload.email != current_user.email:
+            existing_user = await get_user_by_email(db, payload.email)
+            if existing_user and existing_user.id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Email already in use by another user",
+                )
+
+        # Check for username uniqueness if username is being updated
+        if payload.username and payload.username != current_user.username:
+            existing = await check_user_exists(db, email="", username=payload.username)
+            if existing["username_exists"]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Username already taken",
+                )
+
+        # Update user fields
+        update_data = payload.model_dump(exclude_unset=True)
+        for field, value in update_data.items():
+            setattr(current_user, field, value)
+
+        # If email was updated, mark as unverified and send new verification
+        if payload.email and payload.email != current_user.email:
+            current_user.is_verified = False
+            current_user.email_verified_at = None
+
+            # Send new verification email (fire and forget)
+            try:
+                token = await create_verification_token(
+                    db, current_user.id, current_user.username
+                )
+                import asyncio
+
+                asyncio.create_task(
+                    send_verification_email(
+                        db, current_user.email, current_user.username, token
+                    )
+                )
+            except Exception as e:
+                print(f"Failed to send verification email: {e}")
+
+        # Save changes
+        await db.commit()
+        await db.refresh(current_user)
+
+        # Create audit log
+        audit_log = AuditLog.create_log(
+            event_type=AuditEventType.USER_UPDATED,
+            event_description=f"Profile updated for user: {current_user.username}",
+            user_id=str(current_user.id),
+            username=current_user.username,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            success=True,
+        )
+        db.add(audit_log)
+        await db.commit()
+
+        return UserProfileResponse(
+            id=str(current_user.id),
+            email=current_user.email,
+            username=current_user.username,
+            first_name=current_user.first_name,
+            last_name=current_user.last_name,
+            full_name=current_user.full_name,
+            is_active=current_user.is_active,
+            is_superuser=current_user.is_superuser,
+            is_verified=current_user.is_verified,
+            role=current_user.role.value,
+            created_at=(
+                current_user.created_at.isoformat() if current_user.created_at else ""
+            ),
+            last_login=(
+                current_user.last_login.isoformat() if current_user.last_login else None
+            ),
+            email_verified_at=(
+                current_user.email_verified_at.isoformat()
+                if current_user.email_verified_at
+                else None
+            ),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Create audit log for failure
+        audit_log = AuditLog.create_log(
+            event_type=AuditEventType.USER_UPDATED,
+            event_description=f"Profile update failed for user: {current_user.username}",
+            user_id=str(current_user.id),
+            username=current_user.username,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            success=False,
+            error_message=str(e),
+        )
+        db.add(audit_log)
+        await db.commit()
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Profile update failed",
+        )
 
 
 @router.get(

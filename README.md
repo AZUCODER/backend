@@ -1,339 +1,370 @@
 # FastAPI Backend
 
-A robust, scalable, and secure FastAPI backend for modern web applications, featuring enterprise-grade database architecture, OAuth, advanced monitoring, Redis caching, and production-ready security.
+A robust, scalable, and secure FastAPI backend application with comprehensive authentication, authorization, and monitoring capabilities.
 
-**NOTE:** This project uses PostgreSQL for all environments (development, testing, production). SQLite is not supported or used anywhere in this project.
+## 🚀 Overview
 
-## 🚀 Features
+This backend application is built with FastAPI and provides a complete foundation for modern web applications with enterprise-grade security features, comprehensive authentication flows, and production-ready monitoring.
 
-- **FastAPI**: Modern, high-performance web framework
-- **PostgreSQL**: Production-ready database with async support and UUID primary keys
-- **Redis**: Caching and session management
-- **OAuth2 & Social Login**: Google and GitHub login support
-- **JWT Authentication**: Secure, stateless token-based auth
-- **Repository Pattern**: Clean, type-safe data access with UUID support
-- **Async/Await**: Fully asynchronous for high throughput
-- **Database Monitoring**: Real-time query analytics, slow query detection
-- **Health & Metrics Endpoints**: For system, database, and Kubernetes readiness/liveness
-- **Production Security**: Password hashing, audit logging, CORS, input validation, rate limiting
-- **Account Lockout Protection**: Brute force attack prevention
-- **Email Services**: Email verification and password reset via Resend
-- **Auto-generated Docs**: Swagger UI and ReDoc
-- **Type Safety**: Full type hints throughout
-- **Database Migrations**: Alembic for schema management
-- **UUID Primary Keys**: All database tables use UUID strings for primary keys and foreign keys
+### Key Features
 
-## 🏗️ Project Structure
+- **🔐 Authentication & Authorization**: JWT-based authentication with refresh tokens, OAuth integration (Google, GitHub), role-based access control
+- **👥 User Management**: Complete user lifecycle with email verification, password reset, account lockout protection
+- **🛡️ Security**: Rate limiting, security headers, CORS protection, audit logging, password hashing with bcrypt
+- **📊 Monitoring**: Database connection monitoring, query performance metrics, health checks
+- **🗄️ Database**: PostgreSQL with SQLModel (SQLAlchemy + Pydantic), Alembic migrations, UUID-based primary keys
+- **⚡ Caching**: Redis integration for sessions and rate limiting
+- **📧 Email**: Transactional emails via Resend API for verification and password reset
+- **🐳 Containerization**: Multi-stage Docker builds with production optimizations
+- **🧪 Testing**: Comprehensive test suite with pytest and async support
+
+## 📁 Project Structure
 
 ```
 backend/
 ├── app/
-│   ├── api/
+│   ├── main.py                 # FastAPI application entry point
+│   ├── config.py               # Pydantic Settings configuration
+│   ├── database.py             # Database connection and session management
+│   ├── dependencies.py         # FastAPI dependency injection
+│   │
+│   ├── api/                    # API layer
 │   │   └── v1/
-│   │       ├── endpoints/
-│   │       │   ├── auth.py         # Auth endpoints (register, login, etc.)
-│   │       │   ├── oauth.py        # OAuth endpoints (initiate, callback, providers)
-│   │       │   ├── users.py        # User management endpoints
-│   │       │   ├── health.py       # Health, metrics, readiness/liveness
-│   │       │   └── cache.py        # Redis cache management endpoints
-│   │       └── router.py           # API v1 router
-│   ├── core/                       # Core security logic
-│   ├── database/                   # DB connection, monitoring, transactions
-│   │   ├── connection.py           # Enhanced async database connection management
-│   │   ├── monitoring.py           # Database performance monitoring
-│   │   └── transactions.py         # Transaction management with retry logic
-│   ├── models/                     # SQLModel DB models with UUID primary keys
-│   │   ├── base.py                 # Base model with UUID id and timestamps
-│   │   ├── user.py                 # User model with audit fields and OAuth support
-│   │   ├── session.py              # Session management with UUID foreign keys
-│   │   ├── email_verification.py   # Email verification tokens
-│   │   └── audit.py                # Comprehensive audit logging
-│   ├── repositories/               # Repository pattern with UUID support
-│   │   ├── base.py                 # Base repository with common CRUD operations
-│   │   └── user.py                 # User-specific repository operations
-│   ├── schemas/                    # Pydantic schemas
-│   ├── services/                   # Business logic
-│   │   ├── user_service.py         # User management with UUID handling
-│   │   ├── enhanced_user_service.py # Advanced user operations
-│   │   ├── session_service.py      # Session management
-│   │   ├── oauth_providers.py      # OAuth integration
-│   │   ├── redis_service.py        # Redis caching
-│   │   ├── email_service.py        # Email sending
+│   │       ├── router.py       # Main API router
+│   │       └── endpoints/      # API endpoints by feature
+│   │           ├── auth.py     # Authentication endpoints
+│   │           ├── oauth.py    # OAuth endpoints (Google, GitHub)
+│   │           ├── users.py    # User management endpoints
+│   │           ├── health.py   # Health check endpoints
+│   │           └── cache.py    # Cache management endpoints
+│   │
+│   ├── models/                 # SQLModel database models
+│   │   ├── base.py            # BaseModel with common fields (UUID, timestamps)
+│   │   ├── user.py            # User model with roles and OAuth support
+│   │   ├── session.py         # Session management and token blacklisting
+│   │   ├── audit.py           # Audit logging for security events
+│   │   └── email_verification.py # Email verification tokens
+│   │
+│   ├── schemas/                # Pydantic request/response schemas
+│   │   └── auth.py            # Authentication-related schemas
+│   │
+│   ├── services/               # Business logic layer
+│   │   ├── user_service.py    # User CRUD operations
+│   │   ├── auth_service_improved.py # Enhanced authentication service
+│   │   ├── session_service.py # Session and token management
+│   │   ├── oauth_providers.py # OAuth provider implementations
+│   │   ├── email_service.py   # Email delivery via Resend
+│   │   ├── password_reset_service.py # Password reset functionality
 │   │   ├── email_verification_service.py # Email verification
-│   │   ├── password_reset_service.py # Password reset
-│   │   └── auth_service_improved.py # Enhanced authentication service
-│   ├── middleware/                 # Custom middleware
-│   │   ├── rate_limit.py           # Rate limiting
-│   │   └── security.py             # Security headers
-│   ├── utils/                      # Utility modules
-│   ├── config.py                   # Settings management
-│   ├── database.py                 # DB setup
-│   ├── dependencies.py             # Dependency injection
-│   └── tests/                      # Test modules
-├── alembic/                        # DB migrations
-├── alembic.ini                     # Alembic config
-├── pyproject.toml                  # Project dependencies/config
-├── main.py                         # App entry point
-├── tests/                          # Top-level tests
-│   └── test_oauth_endpoints.py     # OAuth endpoint tests
-├── REDIS_SETUP.md                  # Redis setup guide
-├── alembic_manual.md               # Alembic usage guide
-└── README.md                       # This file
+│   │   └── redis_service.py   # Redis operations and caching
+│   │
+│   ├── core/                   # Core utilities
+│   │   └── security.py        # JWT token creation/validation, password hashing
+│   │
+│   ├── middleware/             # Custom middleware
+│   │   ├── security.py        # Security headers middleware
+│   │   └── rate_limit.py      # Rate limiting middleware
+│   │
+│   ├── database/               # Enhanced database components
+│   │   ├── connection.py      # Database connection management
+│   │   └── monitoring.py      # Database performance monitoring
+│   │
+│   ├── utils/                  # Utility functions
+│   │   └── url_utils.py       # URL building utilities
+│   │
+│   └── tests/                  # Test modules
+│       └── __init__.py
+│
+├── alembic/                    # Database migrations
+│   ├── versions/              # Migration files
+│   ├── env.py                 # Alembic environment configuration
+│   └── alembic.ini           # Alembic configuration
+│
+├── tests/                      # Integration tests
+│   └── test_oauth_endpoints.py
+│
+├── Dockerfile                  # Multi-stage Docker build
+├── pyproject.toml             # Python dependencies and project metadata
+├── uv.lock                    # Dependency lock file
+└── main.py                    # Application entry point
 ```
 
-## ⚡ Quick Start
+## 🏗️ Architecture
 
-### Prerequisites
-- Python 3.13+
-- [uv](https://github.com/astral-sh/uv) (recommended) or pip
-- PostgreSQL (required)
-- Redis (optional but recommended for caching)
+### Authentication & Authorization System
 
-### Installation
+The application implements a comprehensive authentication system with multiple layers of security:
 
-1. **Clone the repository**
-   ```bash
-   git clone <your-repo-url>
-   cd backend
-   ```
+#### **JWT Token Management**
+- **Access Tokens**: Short-lived (30 minutes) for API access
+- **Refresh Tokens**: Long-lived (7 days) for token renewal
+- **Token Rotation**: Automatic refresh token rotation for enhanced security
+- **Blacklisting**: Revoked tokens are tracked to prevent reuse
 
-2. **Install dependencies**
-   ```bash
-   # Using uv (recommended)
-   uv venv
-   .venv\Scripts\activate  # Windows
-   source .venv/bin/activate  # Linux/Mac
-   uv sync
-   
-   # Or using pip
-   pip install -r pyproject.toml
-   ```
+#### **OAuth Integration**
+- **Google OAuth**: Complete PKCE flow with state validation
+- **GitHub OAuth**: Secure OAuth implementation with user info fetching
+- **Account Linking**: Automatic linking of OAuth accounts to existing users
+- **CSRF Protection**: State parameter validation and secure cookie handling
 
-3. **Set up PostgreSQL**
-   ```bash
-   # Create database
-   createdb aixiate_db
-   
-   # Or using Docker
-   docker run --name postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=aixiate_db -p 5432:5432 -d postgres:15
-   ```
+#### **User Roles & Permissions**
+```python
+class UserRole(str, Enum):
+    ADMIN = "admin"      # Full system access
+    USER = "user"        # Standard user access
+    GUEST = "guest"      # Limited access
+```
 
-4. **Set up Redis (optional but recommended)**
-   ```bash
-   # Using Docker
-   docker run --name redis -p 6379:6379 -d redis:7-alpine
-   
-   # See REDIS_SETUP.md for detailed instructions
-   ```
+#### **Security Features**
+- **Account Lockout**: Configurable failed login attempt protection
+- **Password Security**: bcrypt hashing with secure defaults
+- **Email Verification**: Required for account activation
+- **Audit Logging**: Comprehensive security event tracking
+- **Rate Limiting**: Per-endpoint and global rate limits
 
-5. **Set up environment variables**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your configuration
-   ```
+### Database Architecture
 
-6. **Run database migrations**
-   ```bash
-   alembic upgrade head
-   ```
+#### **Models & Relationships**
+- **BaseModel**: UUID primary keys, automatic timestamps
+- **User Model**: Complete user profile with OAuth support
+- **Session Model**: JWT session tracking with device info
+- **Audit Model**: Security event logging
+- **Email Verification**: Token-based email verification
 
-7. **Run the development server**
-   ```bash
-   python main.py
-   # or
-   uvicorn app.main:app --reload
-   ```
+#### **Database Features**
+- **PostgreSQL**: Primary database with full ACID compliance
+- **SQLModel**: Type-safe ORM with Pydantic integration
+- **Alembic**: Database migration management
+- **Connection Pooling**: Optimized connection management
+- **Health Monitoring**: Real-time database performance metrics
 
-8. **Access the API**
-   - API: http://localhost:8000
-   - Swagger UI: http://localhost:8000/docs
-   - ReDoc: http://localhost:8000/redoc
-   - Health: http://localhost:8000/health
+### Caching & Performance
 
-## 🗄️ Database Architecture
+#### **Redis Integration**
+- **Session Storage**: Distributed session management
+- **Rate Limiting**: Request throttling and abuse prevention
+- **Caching**: Frequently accessed data caching
+- **Resilience**: Graceful degradation when Redis is unavailable
 
-### UUID Primary Keys
-- **All tables use UUID strings** as primary keys for enhanced security and scalability
-- **BaseModel**: Provides common fields including UUID `id`, `created_at`, and `updated_at`
-- **Foreign Keys**: All foreign key relationships use UUID strings for consistency
-- **Migration Support**: Alembic migrations handle UUID conversion and foreign key relationships
+## 🔧 Configuration
 
-### Database Features
-- **PostgreSQL**: Primary database with async support via psycopg
-- **Repository pattern**: All DB operations in `app/repositories/` with UUID support
-- **Transaction management**: With retry logic in `app/database/transactions.py`
-- **Performance monitoring**: Real-time analytics in `app/database/monitoring.py`
-- **Health check endpoints**: Database status in `app/api/v1/endpoints/health.py`
-- **Migrations**: Alembic for schema management (see `alembic_manual.md`)
+### Environment Variables
 
-### Database Tables
-- **users**: User accounts with OAuth support and audit fields
-- **sessions**: JWT session management with UUID foreign keys
-- **email_verification_tokens**: Email verification with UUID primary keys
-- **password_reset_tokens**: Password reset functionality
-- **audit_logs**: Comprehensive audit trail with JSON event data
-- **blacklisted_tokens**: Token blacklisting for security
-
-## 🔌 API Endpoints (Summary)
-
-### Auth
-- `POST /api/v1/auth/register` — Register user
-- `POST /api/v1/auth/login` — Login
-- `POST /api/v1/auth/logout` — Logout
-- `POST /api/v1/auth/refresh` — Refresh token
-- `GET /api/v1/auth/me` — Current user profile
-- `GET /api/v1/auth/sessions` — List user sessions
-- `DELETE /api/v1/auth/sessions/{session_id}` — Revoke session
-- `POST /api/v1/auth/logout-everywhere` — Logout all sessions
-- `POST /api/v1/auth/forgot-password` — Request password reset
-- `POST /api/v1/auth/reset-password` — Complete password reset
-- `POST /api/v1/auth/verify-email` — Verify email
-- `POST /api/v1/auth/resend-verification` — Resend verification email
-
-### OAuth (Social Login)
-- `GET /api/v1/oauth/providers` — List supported providers
-- `GET /api/v1/oauth/{provider}/initiate` — Start OAuth flow
-- `GET /api/v1/oauth/{provider}/callback` — OAuth callback handler
-
-### Users
-- `GET /api/v1/users/` — List users (admin only)
-- `GET /api/v1/users/{user_id}` — Get user by ID (admin or self)
-- `PUT /api/v1/users/{user_id}` — Update user (admin or self)
-- `DELETE /api/v1/users/{user_id}` — Delete user (admin or self)
-
-### Health, Readiness, Liveness, Metrics
-- `GET /health` — Basic health check
-- `GET /health/database` — DB health
-- `GET /health/database/detailed` — Detailed DB health (admin)
-- `GET /health/readiness` — Readiness probe (Kubernetes)
-- `GET /health/liveness` — Liveness probe (Kubernetes)
-- `GET /metrics/database` — DB performance metrics (admin)
-- `GET /metrics/database/queries` — Query analytics (admin)
-- `GET /metrics/database/slow-queries` — Slow queries (admin)
-- `POST /metrics/database/reset` — Reset DB metrics (admin)
-- `GET /status` — System status (admin)
-
-### Cache Management
-- `GET /api/v1/cache/status` — Redis cache status
-- `POST /api/v1/cache/clear` — Clear all cache
-- `DELETE /api/v1/cache/{key}` — Clear specific cache key
-
-## ⚙️ Configuration
-
-### Environment Variables (`.env`)
-```env
-# API Settings
-API_V1_STR=/api/v1
-PROJECT_NAME=FastAPI Backend
-VERSION=0.1.0
-
-# CORS Settings
-BACKEND_CORS_ORIGINS=http://localhost:3000,http://localhost:3001
-
-# Database Settings
+```bash
+# Database Configuration
 DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/aixiate_db
-DATABASE_URL_ASYNC=postgresql+asyncpg://postgres:postgres@localhost:5432/aixiate_db
-
-# Database Pool Settings
-DB_POOL_SIZE=20
-DB_MAX_OVERFLOW=30
-DB_POOL_TIMEOUT=30
-DB_POOL_RECYCLE=3600
-DB_QUERY_TIMEOUT=30
-
-# Redis Settings
 REDIS_URL=redis://localhost:6379
 
-# Security Settings
-SECRET_KEY=your-super-secret-key-change-this-in-production
+# Security Configuration
+SECRET_KEY=your-secret-key-change-this-in-production
 ACCESS_TOKEN_EXPIRE_MINUTES=30
-REFRESH_TOKEN_EXPIRE_MINUTES=10080
+REFRESH_TOKEN_EXPIRE_MINUTES=10080  # 7 days
+ALGORITHM=HS256
 
-# Email Settings
-FROM_EMAIL=no-reply@example.com
-RESEND_API_KEY=your-resend-api-key
-FRONTEND_BASE_URL=http://localhost:3000
-
-# OAuth Settings
+# OAuth Configuration
 GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
 GITHUB_CLIENT_ID=your-github-client-id
 GITHUB_CLIENT_SECRET=your-github-client-secret
 
+# Email Configuration
+RESEND_API_KEY=your-resend-api-key
+FROM_EMAIL=no-reply@example.com
+
+# Application Configuration
+DEBUG=false
+TESTING=false
+LOG_LEVEL=INFO
+RATE_LIMIT_PER_MINUTE=60
+
+# CORS Configuration
+BACKEND_CORS_ORIGINS=["http://localhost:3000"]
+FRONTEND_BASE_URL=http://localhost:3000
+BACKEND_BASE_URL=http://localhost:8000
+
 # Account Security
 ACCOUNT_LOCKOUT_THRESHOLD=5
 ACCOUNT_LOCKOUT_DURATION_MINUTES=30
-
-# Rate Limiting
-RATE_LIMIT_PER_MINUTE=60
 ```
 
-## 🔒 Security Features
+### Development vs Production
 
-- **JWT Authentication**: Secure, stateless token-based auth
-- **Password Hashing**: bcrypt with configurable schemes
-- **Account Lockout**: Brute force attack prevention
-- **Rate Limiting**: Configurable per-minute limits
-- **Audit Logging**: Comprehensive activity tracking with JSON event data
-- **CORS Configuration**: Secure cross-origin requests
-- **Input Validation**: Pydantic schemas throughout
-- **SQL Injection Prevention**: Parameterized queries
-- **Security Headers**: Middleware for security headers
-- **UUID Primary Keys**: Enhanced security through non-sequential IDs
+The application automatically adjusts settings based on the `DEBUG` flag:
+- **Development**: Shorter lockout durations, verbose logging, CORS relaxed
+- **Production**: Strict security settings, optimized performance, comprehensive monitoring
 
-## 📈 Performance & Monitoring
+## 🚀 Getting Started
 
-- **Fully Async**: async/await throughout the application
-- **Connection Pooling**: Efficient database connections with configurable pool settings
-- **Redis Caching**: Session and data caching
-- **Retry Logic**: Transient failure handling
-- **Performance Monitoring**: Real-time query analytics
-- **Health Monitoring**: Comprehensive health checks
-- **Query Analytics**: Slow query detection and reporting
-- **Database Monitoring**: Connection pool status and performance metrics
+### Prerequisites
+
+- Python 3.13+
+- PostgreSQL 15+
+- Redis 7+ (optional but recommended)
+- Docker & Docker Compose (for containerized setup)
+
+### Local Development
+
+1. **Clone and Setup**
+```bash
+cd backend
+pip install uv  # Fast Python package manager
+uv sync         # Install dependencies
+```
+
+2. **Database Setup**
+```bash
+# Start PostgreSQL and Redis
+docker-compose up postgres redis -d
+
+# Run migrations
+alembic upgrade head
+```
+
+3. **Environment Configuration**
+```bash
+cp .env.example .env
+# Edit .env with your configuration
+```
+
+4. **Start Development Server**
+```bash
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### Docker Development
+
+```bash
+# Start all services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f backend
+
+# Run migrations in container
+docker-compose exec backend alembic upgrade head
+```
+
+## 📚 API Documentation
+
+### Interactive Documentation
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+
+### Core Endpoints
+
+#### Authentication
+- `POST /api/v1/auth/register` - User registration
+- `POST /api/v1/auth/login` - User login
+- `POST /api/v1/auth/refresh` - Token refresh
+- `POST /api/v1/auth/logout` - User logout
+- `POST /api/v1/auth/password-reset` - Password reset request
+- `POST /api/v1/auth/password-reset/complete` - Complete password reset
+
+#### OAuth
+- `GET /oauth/{provider}/initiate` - Start OAuth flow
+- `GET /oauth/{provider}/callback` - OAuth callback handler
+- `GET /oauth/providers` - List available providers
+
+#### User Management
+- `GET /api/v1/users/profile` - Get user profile
+- `PUT /api/v1/users/profile` - Update user profile
+- `GET /api/v1/users/sessions` - List user sessions
+- `DELETE /api/v1/users/sessions/{session_id}` - Revoke session
+
+#### Health & Monitoring
+- `GET /health` - Basic health check
+- `GET /api/v1/health/detailed` - Detailed health status
+- `GET /api/v1/health/database` - Database health metrics
 
 ## 🧪 Testing
 
-- **OAuth Tests**: Comprehensive OAuth endpoint testing
-- **Test Coverage**: Expanding test suite (contributions welcome!)
-- **Test Client**: FastAPI TestClient for integration tests
-- **Isolated Testing**: In-memory database for tests
+### Running Tests
 
-## 📚 Additional Documentation
-
-- [Redis Setup Guide](./REDIS_SETUP.md) — Complete Redis installation and configuration
-- [Alembic Manual](./alembic_manual.md) — Database migration guide and cheatsheet
-
-## 🔑 Authentication & Email Flows
-
-- **Email Verification**: Required after registration with verification links
-- **Password Reset**: Secure password reset via email
-- **OAuth Integration**: Google and GitHub social login
-- **Session Management**: Multi-device session tracking with UUID support
-- **Account Security**: Lockout protection and audit logging
-
-## 🚀 Deployment
-
-### Docker
 ```bash
-# Build and run with Docker Compose
-docker-compose up -d
+# Run all tests
+pytest
+
+# Run with coverage
+pytest --cov=app --cov-report=html
+
+# Run specific test file
+pytest tests/test_oauth_endpoints.py -v
 ```
 
-### Manual Deployment
-1. Set up PostgreSQL and Redis
-2. Configure environment variables
-3. Run database migrations: `alembic upgrade head`
-4. Start the application: `uvicorn app.main:app --host 0.0.0.0 --port 8000`
+### Test Structure
+- **Unit Tests**: Individual component testing
+- **Integration Tests**: API endpoint testing
+- **Security Tests**: Authentication and authorization testing
+
+## 🔒 Security Considerations
+
+### Production Deployment
+
+1. **Environment Security**
+   - Use strong, unique `SECRET_KEY`
+   - Configure OAuth credentials securely
+   - Set up proper CORS origins
+   - Enable HTTPS with proper certificates
+
+2. **Database Security**
+   - Use connection pooling
+   - Enable SSL connections
+   - Regular backup procedures
+   - Monitor for suspicious activity
+
+3. **Monitoring & Logging**
+   - Set up centralized logging
+   - Monitor authentication failures
+   - Track API usage patterns
+   - Set up alerting for security events
+
+### Security Headers
+
+The application automatically sets comprehensive security headers:
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `X-XSS-Protection: 1; mode=block`
+- `Strict-Transport-Security` (HTTPS only)
+- `Content-Security-Policy` with OAuth provider allowlists
+
+## 📊 Monitoring & Observability
+
+### Health Checks
+- **Basic Health**: Application status and version
+- **Database Health**: Connection status and query performance
+- **Redis Health**: Cache availability and performance
+- **Detailed Metrics**: Response times, error rates, resource usage
+
+### Logging
+- **Structured Logging**: JSON format for easy parsing
+- **Audit Trails**: Security events and user actions
+- **Performance Metrics**: Query times and resource usage
+- **Error Tracking**: Comprehensive error logging with context
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add/expand tests
-5. Submit a pull request
+### Development Guidelines
+
+1. **Code Style**: Follow PEP 8 and use type hints
+2. **Testing**: Write tests for new features
+3. **Documentation**: Update API documentation
+4. **Security**: Follow security best practices
+5. **Performance**: Consider performance implications
+
+### Code Quality Tools
+- **Type Checking**: mypy for static type analysis
+- **Linting**: flake8 and black for code formatting
+- **Testing**: pytest with async support
+- **Security**: bandit for security linting
 
 ## 📄 License
 
-This project is licensed under the MIT License.
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🆘 Support
+
+For support and questions:
+- Check the API documentation at `/docs`
+- Review the health endpoints for system status
+- Check logs for detailed error information
+- Refer to the configuration guide for setup issues

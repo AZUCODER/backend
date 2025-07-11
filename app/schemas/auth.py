@@ -121,6 +121,43 @@ class UserProfileResponse(BaseModel):
     email_verified_at: Optional[str] = None  # ISO format datetime string
 
 
+class ProfileUpdate(BaseModel):
+    """Fields a signed-in user is allowed to change on their own profile."""
+
+    email: Optional[EmailStr] = Field(
+        None, description="Email address", examples=["alice@example.com"]
+    )
+    username: Optional[str] = Field(
+        None,
+        min_length=3,
+        max_length=50,
+        pattern=r"^[A-Za-z0-9_]+$",
+        description="Username (3-50 characters, alphanumeric and underscores only)",
+        examples=["john_doe"],
+    )
+    first_name: Optional[str] = Field(
+        None, max_length=100, description="User's first name", examples=["John"]
+    )
+    last_name: Optional[str] = Field(
+        None, max_length=100, description="User's last name", examples=["Doe"]
+    )
+    full_name: Optional[str] = Field(
+        None, max_length=200, description="User's full name", examples=["John Doe"]
+    )
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, v: Optional[str]) -> Optional[str]:
+        """Validate username format if provided."""
+        if v is None:
+            return v
+        if not re.match(r"^[a-zA-Z0-9_]+$", v):
+            raise ValueError(
+                "Username can only contain letters, numbers, and underscores"
+            )
+        return v.lower()
+
+
 class AuthResponse(BaseModel):
     """Generic authentication response."""
 

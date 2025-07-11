@@ -206,6 +206,31 @@
         "Implement proper backup and recovery procedures",
         "Monitor application performance and error rates"
       ]
+    },
+    {
+      "category": "API Contract-First Development & Type Safety",
+      "rules": [
+        "Use Pydantic models for ALL request/response schemas - never return raw dictionaries",
+        "Define explicit response models for every endpoint using response_model parameter",
+        "Use proper field validation with Pydantic validators and constraints",
+        "Include comprehensive field descriptions and examples in schema definitions",
+        "Use consistent naming: Request/Response/Update suffixes for API schemas",
+        "Implement proper error response schemas with consistent structure",
+        "Use Optional[] for nullable fields and provide sensible defaults",
+        "Add proper docstrings with parameter and return type descriptions",
+        "Use UUIDs for all primary keys and foreign keys in database tables",
+        "Implement proper audit logging for all user actions and system events",
+        "Use enterprise-level validation with regex patterns and field constraints",
+        "Include proper examples in schema field definitions for better documentation",
+        "Use proper HTTP status codes and consistent error response formats",
+        "Implement proper request/response validation with detailed error messages",
+        "Use dependency injection for authentication and authorization checks",
+        "Implement proper session management with typed session responses",
+        "Use proper database transaction handling with rollback on errors",
+        "Implement comprehensive OpenAPI documentation with examples",
+        "Use proper CORS configuration for frontend integration",
+        "Implement proper rate limiting and security headers"
+      ]
     }
   ]
 }
